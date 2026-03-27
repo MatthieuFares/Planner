@@ -1,0 +1,6 @@
+@PlannerAPI_HostAddress = http://localhost:5120
+
+GET {{PlannerAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
