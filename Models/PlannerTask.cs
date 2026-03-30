@@ -2,17 +2,21 @@ using System.ComponentModel.DataAnnotations;
 
 namespace PlannerAPI.Models
 {
-    public class Project
+    public class PlannerTask
     {
         public int Id { get; set; }
 
         [Required]
         [StringLength(100)]
-        public string Name { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
 
         [StringLength(500)]
         public string? Description { get; set; }
 
-        public List<PlannerTask> Tasks { get; set; } = new();
+        public bool IsDone { get; set; } = false;
+
+        public int ProjectId { get; set; }
+
+        public Project? Project { get; set; }
     }
 }

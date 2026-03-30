@@ -1,42 +1,125 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using PlannerAPI.Data;
+using PlannerAPI.DTOs.Tasks;
 using PlannerAPI.Models;
-using PlannerAPI.Services;
 
-namespace PlannerAPI.Controllers;
-
-[ApiController]
-[Route("[controller]")]
-public class TasksController : ControllerBase
+namespace PlannerAPI.Controllers
 {
-    private readonly TaskService _service;
-
-    public TasksController(TaskService service)
+    [ApiController]
+    [Route("api/[controller]")]
+    public class TasksController : ControllerBase
     {
-        _service = service;
-    }
+        private readonly AppDbContext _context;
 
-    [HttpGet]
-    public async Task<IActionResult> GetAll()
-    {
-        return Ok(await _service.GetAllAsync());
-    }
+        public TasksController(AppDbContext context)
+        {
+            _context = context;
+        }
 
-    [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(int id)
-    {
-        var task = await _service.GetByIdAsync(id);
-        if (task == null) return NotFound();
+        [HttpGet]
+        public async System.Threading.Tasks.Task<ActionResult<IEnumerable<TaskReadDto>>> GetTasks()
+        {
+            var tasks = await _context.Tasks
+                .Select(t => new TaskReadDto
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Description = t.Description,
+                    IsDone = t.IsDone,
+                    ProjectId = t.ProjectId
+                })
+                .ToListAsync();
 
-        return Ok(task);
-    }
+            return Ok(tasks);
+        }
 
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] TaskItem task)
-    {
-        if (string.IsNullOrWhiteSpace(task.Title))
-            return BadRequest("Title is required");
+        [HttpGet("{id}")]
+        public async System.Threading.Tasks.Task<ActionResult<TaskReadDto>> GetTaskById(int id)
+        {
+            var taskItem = await _context.Tasks.FindAsync(id);
 
-        var created = await _service.CreateAsync(task);
-        return Ok(created);
+            if (taskItem == null)
+                return NotFound();
+
+            var dto = new TaskReadDto
+            {
+                Id = taskItem.Id,
+                Title = taskItem.Title,
+                Description = taskItem.Description,
+                IsDone = taskItem.IsDone,
+                ProjectId = taskItem.ProjectId
+            };
+
+            return Ok(dto);
+        }
+
+        [HttpPost]
+        public async System.Threading.Tasks.Task<ActionResult<TaskReadDto>> CreateTask(TaskCreateDto dto)
+        {
+            var projectExists = await _context.Projects.AnyAsync(p => p.Id == dto.ProjectId);
+
+            if (!projectExists)
+                return NotFound($"Projet avec l'id {dto.ProjectId} introuvable.");
+
+            var taskItem = new PlannerTask
+            {
+                Title = dto.Title,
+                Description = dto.Description,
+                IsDone = dto.IsDone,
+                ProjectId = dto.ProjectId
+            };
+
+            _context.Tasks.Add(taskItem);
+            await _context.SaveChangesAsync();
+
+            var result = new TaskReadDto
+            {
+                Id = taskItem.Id,
+                Title = taskItem.Title,
+                Description = taskItem.Description,
+                IsDone = taskItem.IsDone,
+                ProjectId = taskItem.ProjectId
+            };
+
+            return CreatedAtAction(nameof(GetTaskById), new { id = taskItem.Id }, result);
+        }
+
+        [HttpPut("{id}")]
+        public async System.Threading.Tasks.Task<IActionResult> UpdateTask(int id, TaskUpdateDto dto)
+        {
+            var taskItem = await _context.Tasks.FindAsync(id);
+
+            if (taskItem == null)
+                return NotFound();
+
+            var projectExists = await _context.Projects.AnyAsync(p => p.Id == dto.ProjectId);
+
+            if (!projectExists)
+                return NotFound($"Projet avec l'id {dto.ProjectId} introuvable.");
+
+            taskItem.Title = dto.Title;
+            taskItem.Description = dto.Description;
+            taskItem.IsDone = dto.IsDone;
+            taskItem.ProjectId = dto.ProjectId;
+
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async System.Threading.Tasks.Task<IActionResult> DeleteTask(int id)
+        {
+            var taskItem = await _context.Tasks.FindAsync(id);
+
+            if (taskItem == null)
+                return NotFound();
+
+            _context.Tasks.Remove(taskItem);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
     }
 }

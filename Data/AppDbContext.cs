@@ -1,30 +1,38 @@
 using Microsoft.EntityFrameworkCore;
 using PlannerAPI.Models;
 
-namespace PlannerAPI.Data;
-
-public class AppDbContext : DbContext
+namespace PlannerAPI.Data
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+    public class AppDbContext : DbContext
     {
-    }
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+        {
+        }
 
-    public DbSet<Project> Projects => Set<Project>();
-    public DbSet<TaskItem> Tasks => Set<TaskItem>();
-    public DbSet<Dependency> Dependencies => Set<Dependency>();
+        public DbSet<Project> Projects => Set<Project>();
+        public DbSet<PlannerTask> Tasks => Set<PlannerTask>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<Dependency>()
-            .HasOne(d => d.Predecessor)
-            .WithMany(t => t.Successors)
-            .HasForeignKey(d => d.PredecessorId)
-            .OnDelete(DeleteBehavior.Restrict);
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<Dependency>()
-            .HasOne(d => d.Successor)
-            .WithMany(t => t.Predecessors)
-            .HasForeignKey(d => d.SuccessorId)
-            .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<PlannerTask>()
+                .HasOne(t => t.Project)
+                .WithMany(p => p.Tasks)
+                .HasForeignKey(t => t.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<TaskDependency>()
+                .HasOne(td => td.Successor)
+                .WithMany(t => t.Predecessors)
+                .HasForeignKey(td => td.SuccessorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<TaskDependency>()
+                .HasOne(td => td.Predecessor)
+                .WithMany(t => t.Successors)
+                .HasForeignKey(td => td.PredecessorId)
+                .OnDelete(DeleteBehavior.Restrict);
+        }
     }
 }
