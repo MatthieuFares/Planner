@@ -4,27 +4,27 @@ using PlannerAPI.Models;
 
 namespace PlannerAPI.Services;
 
-public class DependencyService
+public class TaskDependencyService
 {
     private readonly AppDbContext _context;
 
-    public DependencyService(AppDbContext context)
+    public TaskDependencyService(AppDbContext context)
     {
         _context = context;
     }
 
-    public async Task<List<Dependency>> GetAllAsync()
+    public async Task<List<TaskDependency>> GetAllAsync()
     {
-        return await _context.Dependencies
+        return await _context.TaskDependencies
             .Include(d => d.Predecessor)
             .Include(d => d.Successor)
             .ToListAsync();
     }
 
-    public async Task<Dependency> CreateAsync(Dependency dependency)
+    public async Task<TaskDependency> CreateAsync(TaskDependency TaskDependency)
     {
-        _context.Dependencies.Add(dependency);
+        _context.TaskDependencies.Add(TaskDependency);
         await _context.SaveChangesAsync();
-        return dependency;
+        return TaskDependency;
     }
 }

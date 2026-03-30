@@ -13,21 +13,21 @@ public class TaskService
         _context = context;
     }
 
-    public async Task<List<TaskItem>> GetAllAsync()
+    public async Task<List<PlannerTask>> GetAllAsync()
     {
         return await _context.Tasks
             .Include(t => t.Project)
             .ToListAsync();
     }
 
-    public async Task<TaskItem?> GetByIdAsync(int id)
+    public async Task<PlannerTask?> GetByIdAsync(int id)
     {
         return await _context.Tasks
             .Include(t => t.Project)
             .FirstOrDefaultAsync(t => t.Id == id);
     }
 
-    public async Task<TaskItem> CreateAsync(TaskItem task)
+    public async Task<PlannerTask> CreateAsync(PlannerTask task)
     {
         _context.Tasks.Add(task);
         await _context.SaveChangesAsync();

@@ -54,6 +54,24 @@ namespace PlannerAPI.Controllers
             return Ok(dto);
         }
 
+        // GET: api/taskdependencies/task/5
+        [HttpGet("task/{taskId}")]
+        public async Task<ActionResult<IEnumerable<TaskDependencyReadDto>>> GetByTask(int taskId)
+        {
+            var dependencies = await _context.TaskDependencies
+                .Where(td => td.PredecessorId == taskId || td.SuccessorId == taskId)
+                .Select(td => new TaskDependencyReadDto
+                {
+                    Id = td.Id,
+                    PredecessorId = td.PredecessorId,
+                    SuccessorId = td.SuccessorId,
+                    Type = td.Type
+                })
+                .ToListAsync();
+
+            return Ok(dependencies);
+        }
+
         // POST: api/taskdependencies
         [HttpPost]
         public async Task<ActionResult<TaskDependencyReadDto>> Create(TaskDependencyCreateDto dto)
