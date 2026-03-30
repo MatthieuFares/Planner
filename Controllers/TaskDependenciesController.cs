@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using PlannerAPI.Data;
 using PlannerAPI.DTOs.Dependencies;
-using PlannerAPI.Models;
+using PlannerAPI.Services.Interfaces;
 
 namespace PlannerAPI.Controllers
 {
@@ -10,151 +8,86 @@ namespace PlannerAPI.Controllers
     [Route("api/[controller]")]
     public class TaskDependenciesController : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly ITaskDependencyService _taskDependencyService;
 
-        public TaskDependenciesController(AppDbContext context)
+        public TaskDependenciesController(ITaskDependencyService taskDependencyService)
         {
-            _context = context;
+            _taskDependencyService = taskDependencyService;
         }
 
-        // GET: api/taskdependencies
         [HttpGet]
         public async Task<ActionResult<IEnumerable<TaskDependencyReadDto>>> GetAll()
         {
-            var dependencies = await _context.TaskDependencies
-                .Select(td => new TaskDependencyReadDto
-                {
-                    Id = td.Id,
-                    PredecessorId = td.PredecessorId,
-                    SuccessorId = td.SuccessorId,
-                    Type = td.Type
-                })
-                .ToListAsync();
-
+            var dependencies = await _taskDependencyService.GetAllAsync();
             return Ok(dependencies);
         }
 
-        // GET: api/taskdependencies/5
         [HttpGet("{id}")]
         public async Task<ActionResult<TaskDependencyReadDto>> GetById(int id)
         {
-            var dependency = await _context.TaskDependencies.FindAsync(id);
+            var dependency = await _taskDependencyService.GetByIdAsync(id);
 
             if (dependency == null)
                 return NotFound();
 
-            var dto = new TaskDependencyReadDto
-            {
-                Id = dependency.Id,
-                PredecessorId = dependency.PredecessorId,
-                SuccessorId = dependency.SuccessorId,
-                Type = dependency.Type
-            };
-
-            return Ok(dto);
+            return Ok(dependency);
         }
 
-        // GET: api/taskdependencies/task/5
         [HttpGet("task/{taskId}")]
         public async Task<ActionResult<IEnumerable<TaskDependencyReadDto>>> GetByTask(int taskId)
         {
-            var dependencies = await _context.TaskDependencies
-                .Where(td => td.PredecessorId == taskId || td.SuccessorId == taskId)
-                .Select(td => new TaskDependencyReadDto
-                {
-                    Id = td.Id,
-                    PredecessorId = td.PredecessorId,
-                    SuccessorId = td.SuccessorId,
-                    Type = td.Type
-                })
-                .ToListAsync();
-
+            var dependencies = await _taskDependencyService.GetByTaskIdAsync(taskId);
             return Ok(dependencies);
         }
 
-        // POST: api/taskdependencies
         [HttpPost]
         public async Task<ActionResult<TaskDependencyReadDto>> Create(TaskDependencyCreateDto dto)
         {
-            // ❌ Une tâche ne peut pas dépendre d'elle-même
-            if (dto.PredecessorId == dto.SuccessorId)
-                return BadRequest("Une tâche ne peut pas dépendre d'elle-même.");
+            var result = await _taskDependencyService.CreateAsync(dto);
 
-            // 🔍 Vérifier existence des tâches
-            var predecessorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.PredecessorId);
-            var successorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.SuccessorId);
-
-            if (!predecessorExists || !successorExists)
-                return NotFound("Une des tâches n'existe pas.");
-
-            // ❌ Empêcher doublon exact
-            var alreadyExists = await _context.TaskDependencies.AnyAsync(td =>
-                td.PredecessorId == dto.PredecessorId &&
-                td.SuccessorId == dto.SuccessorId &&
-                td.Type == dto.Type);
-
-            if (alreadyExists)
-                return Conflict("Cette dépendance existe déjà.");
-
-            var dependency = new TaskDependency
+            if (!result.Success)
             {
-                PredecessorId = dto.PredecessorId,
-                SuccessorId = dto.SuccessorId,
-                Type = dto.Type
-            };
+                if (result.Error == "Cette dépendance existe déjà.")
+                    return Conflict(result.Error);
 
-            _context.TaskDependencies.Add(dependency);
-            await _context.SaveChangesAsync();
+                if (result.Error == "Une tâche ne peut pas dépendre d'elle-même.")
+                    return BadRequest(result.Error);
 
-            var result = new TaskDependencyReadDto
-            {
-                Id = dependency.Id,
-                PredecessorId = dependency.PredecessorId,
-                SuccessorId = dependency.SuccessorId,
-                Type = dependency.Type
-            };
+                return NotFound(result.Error);
+            }
 
-            return CreatedAtAction(nameof(GetById), new { id = dependency.Id }, result);
+            return CreatedAtAction(nameof(GetById), new { id = result.Data!.Id }, result.Data);
         }
 
-        // PUT: api/taskdependencies/5
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, TaskDependencyUpdateDto dto)
         {
-            var dependency = await _context.TaskDependencies.FindAsync(id);
+            var result = await _taskDependencyService.UpdateAsync(id, dto);
 
-            if (dependency == null)
-                return NotFound();
+            if (!result.Success)
+            {
+                if (result.Error == "Dépendance introuvable.")
+                    return NotFound(result.Error);
 
-            if (dto.PredecessorId == dto.SuccessorId)
-                return BadRequest("Une tâche ne peut pas dépendre d'elle-même.");
+                if (result.Error == "Une tâche ne peut pas dépendre d'elle-même.")
+                    return BadRequest(result.Error);
 
-            var predecessorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.PredecessorId);
-            var successorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.SuccessorId);
+                if (result.Error == "Une dépendance identique existe déjà.")
+                    return Conflict(result.Error);
 
-            if (!predecessorExists || !successorExists)
-                return NotFound("Une des tâches n'existe pas.");
-
-            dependency.PredecessorId = dto.PredecessorId;
-            dependency.SuccessorId = dto.SuccessorId;
-            dependency.Type = dto.Type;
-
-            await _context.SaveChangesAsync();
+                return NotFound(result.Error);
+            }
 
             return NoContent();
         }
 
-        // DELETE: api/taskdependencies/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var dependency = await _context.TaskDependencies.FindAsync(id);
+            var deleted = await _taskDependencyService.DeleteAsync(id);
 
-            if (dependency == null)
+            if (!deleted)
                 return NotFound();
-
-            _context.TaskDependencies.Remove(dependency);
-            await _context.SaveChangesAsync();
 
             return NoContent();
         }
