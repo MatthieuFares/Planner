@@ -16,7 +16,9 @@ namespace PlannerAPI.Models
         public bool IsDone { get; set; } = false;
 
         public int ProjectId { get; set; }
-
         public Project? Project { get; set; }
+
+        public List<TaskDependency> Predecessors { get; set; } = new();
+        public List<TaskDependency> Successors { get; set; } = new();
     }
 }
