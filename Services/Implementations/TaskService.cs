@@ -24,7 +24,10 @@ namespace PlannerAPI.Services.Implementations
                     Title = t.Title,
                     Description = t.Description,
                     IsDone = t.IsDone,
-                    ProjectId = t.ProjectId
+                    ProjectId = t.ProjectId,
+                    StartDate = t.StartDate,
+                    EndDate = t.EndDate,
+                    Duration = t.Duration
                 })
                 .ToListAsync();
         }
@@ -39,7 +42,10 @@ namespace PlannerAPI.Services.Implementations
                     Title = t.Title,
                     Description = t.Description,
                     IsDone = t.IsDone,
-                    ProjectId = t.ProjectId
+                    ProjectId = t.ProjectId,
+                    StartDate = t.StartDate,
+                    EndDate = t.EndDate,
+                    Duration = t.Duration
                 })
                 .FirstOrDefaultAsync();
         }
@@ -51,25 +57,31 @@ namespace PlannerAPI.Services.Implementations
             if (!projectExists)
                 return null;
 
-            var taskItem = new PlannerTask
-            {
-                Title = dto.Title,
-                Description = dto.Description,
-                IsDone = dto.IsDone,
-                ProjectId = dto.ProjectId
-            };
+                var taskItem = new PlannerTask
+                {
+                    Title = dto.Title,
+                    Description = dto.Description,
+                    IsDone = dto.IsDone,
+                    ProjectId = dto.ProjectId,
+                    StartDate = dto.StartDate,
+                    EndDate = dto.EndDate,
+                    Duration = dto.Duration
+                };
 
             _context.Tasks.Add(taskItem);
             await _context.SaveChangesAsync();
 
-            return new TaskReadDto
-            {
-                Id = taskItem.Id,
-                Title = taskItem.Title,
-                Description = taskItem.Description,
-                IsDone = taskItem.IsDone,
-                ProjectId = taskItem.ProjectId
-            };
+                return new TaskReadDto
+                {
+                    Id = taskItem.Id,
+                    Title = taskItem.Title,
+                    Description = taskItem.Description,
+                    IsDone = taskItem.IsDone,
+                    ProjectId = taskItem.ProjectId,
+                    StartDate = taskItem.StartDate,
+                    EndDate = taskItem.EndDate,
+                    Duration = taskItem.Duration
+                };
         }
 
         public async Task<bool> UpdateAsync(int id, TaskUpdateDto dto)
@@ -84,10 +96,13 @@ namespace PlannerAPI.Services.Implementations
             if (!projectExists)
                 return false;
 
-            taskItem.Title = dto.Title;
-            taskItem.Description = dto.Description;
-            taskItem.IsDone = dto.IsDone;
-            taskItem.ProjectId = dto.ProjectId;
+                taskItem.Title = dto.Title;
+                taskItem.Description = dto.Description;
+                taskItem.IsDone = dto.IsDone;
+                taskItem.ProjectId = dto.ProjectId;
+                taskItem.StartDate = dto.StartDate;
+                taskItem.EndDate = dto.EndDate;
+                taskItem.Duration = dto.Duration;
 
             await _context.SaveChangesAsync();
             return true;
