@@ -2,9 +2,9 @@ namespace PlannerAPI.Models
 {
     public enum DependencyType
     {
-        FinishToStart, // FS
-        StartToStart,  // SS
-        FinishToFinish,// FF
-        StartToFinish  // SF
+        FS = 0,
+        SS = 1,
+        FF = 2,
+        SF = 3
     }
 }

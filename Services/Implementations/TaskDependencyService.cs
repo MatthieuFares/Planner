@@ -9,43 +9,18 @@ namespace PlannerAPI.Services.Implementations
     public class TaskDependencyService : ITaskDependencyService
     {
         private readonly AppDbContext _context;
+        private readonly ITaskSchedulingService _taskSchedulingService;
 
-        public TaskDependencyService(AppDbContext context)
+        public TaskDependencyService(AppDbContext context, ITaskSchedulingService taskSchedulingService)
         {
             _context = context;
-        }
-
-        public async Task<IEnumerable<TaskDependencyReadDto>> GetAllAsync()
-        {
-            return await _context.TaskDependencies
-                .Select(td => new TaskDependencyReadDto
-                {
-                    Id = td.Id,
-                    PredecessorId = td.PredecessorId,
-                    SuccessorId = td.SuccessorId,
-                    Type = td.Type
-                })
-                .ToListAsync();
-        }
-
-        public async Task<TaskDependencyReadDto?> GetByIdAsync(int id)
-        {
-            return await _context.TaskDependencies
-                .Where(td => td.Id == id)
-                .Select(td => new TaskDependencyReadDto
-                {
-                    Id = td.Id,
-                    PredecessorId = td.PredecessorId,
-                    SuccessorId = td.SuccessorId,
-                    Type = td.Type
-                })
-                .FirstOrDefaultAsync();
+            _taskSchedulingService = taskSchedulingService;
         }
 
         public async Task<IEnumerable<TaskDependencyReadDto>> GetByTaskIdAsync(int taskId)
         {
             return await _context.TaskDependencies
-                .Where(td => td.PredecessorId == taskId || td.SuccessorId == taskId)
+                .Where(td => td.SuccessorId == taskId || td.PredecessorId == taskId)
                 .Select(td => new TaskDependencyReadDto
                 {
                     Id = td.Id,
@@ -56,25 +31,8 @@ namespace PlannerAPI.Services.Implementations
                 .ToListAsync();
         }
 
-        public async Task<(bool Success, string? Error, TaskDependencyReadDto? Data)> CreateAsync(TaskDependencyCreateDto dto)
+        public async Task AddDependencyAsync(TaskDependencyCreateDto dto)
         {
-            if (dto.PredecessorId == dto.SuccessorId)
-                return (false, "Une tâche ne peut pas dépendre d'elle-même.", null);
-
-            var predecessorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.PredecessorId);
-            var successorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.SuccessorId);
-
-            if (!predecessorExists || !successorExists)
-                return (false, "Une des tâches n'existe pas.", null);
-
-            var alreadyExists = await _context.TaskDependencies.AnyAsync(td =>
-                td.PredecessorId == dto.PredecessorId &&
-                td.SuccessorId == dto.SuccessorId &&
-                td.Type == dto.Type);
-
-            if (alreadyExists)
-                return (false, "Cette dépendance existe déjà.", null);
-
             var dependency = new TaskDependency
             {
                 PredecessorId = dto.PredecessorId,
@@ -85,41 +43,20 @@ namespace PlannerAPI.Services.Implementations
             _context.TaskDependencies.Add(dependency);
             await _context.SaveChangesAsync();
 
-            var result = new TaskDependencyReadDto
-            {
-                Id = dependency.Id,
-                PredecessorId = dependency.PredecessorId,
-                SuccessorId = dependency.SuccessorId,
-                Type = dependency.Type
-            };
-
-            return (true, null, result);
+            // 🔥 recalcul des dates
+            await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
         }
 
-        public async Task<(bool Success, string? Error)> UpdateAsync(int id, TaskDependencyUpdateDto dto)
+        public async Task<bool> UpdateAsync(int id, TaskDependencyUpdateDto dto)
         {
             var dependency = await _context.TaskDependencies.FindAsync(id);
 
             if (dependency == null)
-                return (false, "Dépendance introuvable.");
+                return false;
 
+            // sécurité basique
             if (dto.PredecessorId == dto.SuccessorId)
-                return (false, "Une tâche ne peut pas dépendre d'elle-même.");
-
-            var predecessorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.PredecessorId);
-            var successorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.SuccessorId);
-
-            if (!predecessorExists || !successorExists)
-                return (false, "Une des tâches n'existe pas.");
-
-            var duplicateExists = await _context.TaskDependencies.AnyAsync(td =>
-                td.Id != id &&
-                td.PredecessorId == dto.PredecessorId &&
-                td.SuccessorId == dto.SuccessorId &&
-                td.Type == dto.Type);
-
-            if (duplicateExists)
-                return (false, "Une dépendance identique existe déjà.");
+                return false;
 
             dependency.PredecessorId = dto.PredecessorId;
             dependency.SuccessorId = dto.SuccessorId;
@@ -127,18 +64,8 @@ namespace PlannerAPI.Services.Implementations
 
             await _context.SaveChangesAsync();
 
-            return (true, null);
-        }
-
-        public async Task<bool> DeleteAsync(int id)
-        {
-            var dependency = await _context.TaskDependencies.FindAsync(id);
-
-            if (dependency == null)
-                return false;
-
-            _context.TaskDependencies.Remove(dependency);
-            await _context.SaveChangesAsync();
+            // 🔥 recalcul après modif
+            await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
 
             return true;
         }

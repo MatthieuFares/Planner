@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlannerAPI.Data;
 using PlannerAPI.DTOs.Tasks;
-using PlannerAPI.Models;
+using PlannerAPI.Services.Interfaces;
 
 namespace PlannerAPI.Controllers
 {
@@ -11,10 +11,12 @@ namespace PlannerAPI.Controllers
     public class TasksController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly ITaskService _taskService;
 
-        public TasksController(AppDbContext context)
+        public TasksController(AppDbContext context, ITaskService taskService)
         {
             _context = context;
+            _taskService = taskService;
         }
 
         [HttpGet]
@@ -58,34 +60,14 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpPost]
-        public async System.Threading.Tasks.Task<ActionResult<TaskReadDto>> CreateTask(TaskCreateDto dto)
+        public async Task<ActionResult<TaskReadDto>> CreateTask(TaskCreateDto dto)
         {
-            var projectExists = await _context.Projects.AnyAsync(p => p.Id == dto.ProjectId);
+            var result = await _taskService.CreateTaskAsync(dto);
 
-            if (!projectExists)
+            if (result == null)
                 return NotFound($"Projet avec l'id {dto.ProjectId} introuvable.");
 
-            var taskItem = new PlannerTask
-            {
-                Title = dto.Title,
-                Description = dto.Description,
-                IsDone = dto.IsDone,
-                ProjectId = dto.ProjectId
-            };
-
-            _context.Tasks.Add(taskItem);
-            await _context.SaveChangesAsync();
-
-            var result = new TaskReadDto
-            {
-                Id = taskItem.Id,
-                Title = taskItem.Title,
-                Description = taskItem.Description,
-                IsDone = taskItem.IsDone,
-                ProjectId = taskItem.ProjectId
-            };
-
-            return CreatedAtAction(nameof(GetTaskById), new { id = taskItem.Id }, result);
+            return CreatedAtAction(nameof(GetTaskById), new { id = result.Id }, result);
         }
 
         [HttpPut("{id}")]

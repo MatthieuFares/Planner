@@ -10,6 +10,7 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<ITaskDependencyService, TaskDependencyService>();
+builder.Services.AddScoped<ITaskSchedulingService, TaskSchedulingService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
