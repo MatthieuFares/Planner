@@ -29,7 +29,10 @@ namespace PlannerAPI.Services.Implementations
                 Title = dto.Title,
                 Description = dto.Description,
                 IsDone = dto.IsDone,
-                ProjectId = dto.ProjectId
+                ProjectId = dto.ProjectId,
+                StartDate = dto.StartDate,
+                EndDate = dto.EndDate,
+                Duration = dto.Duration
             };
 
             _context.Tasks.Add(taskItem);
@@ -43,7 +46,10 @@ namespace PlannerAPI.Services.Implementations
                 Title = taskItem.Title,
                 Description = taskItem.Description,
                 IsDone = taskItem.IsDone,
-                ProjectId = taskItem.ProjectId
+                ProjectId = taskItem.ProjectId,
+                StartDate = taskItem.StartDate,
+                EndDate = taskItem.EndDate,
+                Duration = taskItem.Duration
             };
         }
     }

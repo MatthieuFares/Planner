@@ -9,10 +9,12 @@ namespace PlannerAPI.Controllers
     public class TaskDependenciesController : ControllerBase
     {
         private readonly ITaskDependencyService _taskDependencyService;
+        private readonly ITaskSchedulingService _taskSchedulingService;
 
-        public TaskDependenciesController(ITaskDependencyService taskDependencyService)
+        public TaskDependenciesController(ITaskDependencyService taskDependencyService, ITaskSchedulingService taskSchedulingService)
         {
             _taskDependencyService = taskDependencyService;
+            _taskSchedulingService = taskSchedulingService;
         }
 
         [HttpGet("task/{taskId}")]
@@ -26,6 +28,7 @@ namespace PlannerAPI.Controllers
         public async Task<IActionResult> AddDependency(TaskDependencyCreateDto dto)
         {
             await _taskDependencyService.AddDependencyAsync(dto);
+            await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
             return Ok();
         }
 
@@ -36,7 +39,7 @@ namespace PlannerAPI.Controllers
 
             if (!updated)
                 return NotFound("Dépendance introuvable ou invalide.");
-
+            await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
             return NoContent();
         }
     }

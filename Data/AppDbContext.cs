@@ -17,28 +17,28 @@ namespace PlannerAPI.Data
         {
             base.OnModelCreating(modelBuilder);
 
-            // 🔗 Project -> Tasks (cascade delete OK)
+            // Project -> Tasks (cascade delete OK)
             modelBuilder.Entity<PlannerTask>()
                 .HasOne(t => t.Project)
                 .WithMany(p => p.Tasks)
                 .HasForeignKey(t => t.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // 🔗 TaskDependency -> Successor
+            // TaskDependency -> Successor
             modelBuilder.Entity<TaskDependency>()
                 .HasOne(td => td.Successor)
                 .WithMany(t => t.Predecessors)
                 .HasForeignKey(td => td.SuccessorId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // 🔗 TaskDependency -> Predecessor
+            // TaskDependency -> Predecessor
             modelBuilder.Entity<TaskDependency>()
                 .HasOne(td => td.Predecessor)
                 .WithMany(t => t.Successors)
                 .HasForeignKey(td => td.PredecessorId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // ⚠️ Optionnel mais conseillé : éviter doublons DB
+            // éviter doublons DB
             modelBuilder.Entity<TaskDependency>()
                 .HasIndex(td => new { td.PredecessorId, td.SuccessorId, td.Type })
                 .IsUnique();

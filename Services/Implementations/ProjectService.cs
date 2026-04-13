@@ -56,7 +56,10 @@ namespace PlannerAPI.Services.Implementations
                     Title = t.Title,
                     Description = t.Description,
                     IsDone = t.IsDone,
-                    ProjectId = t.ProjectId
+                    ProjectId = t.ProjectId,
+                    StartDate = t.StartDate,
+                    EndDate = t.EndDate,
+                    Duration = t.Duration
                 })
                 .ToListAsync();
         }

@@ -12,11 +12,13 @@ namespace PlannerAPI.Controllers
     {
         private readonly AppDbContext _context;
         private readonly ITaskService _taskService;
+        private readonly ITaskSchedulingService _taskSchedulingService;
 
-        public TasksController(AppDbContext context, ITaskService taskService)
+        public TasksController(AppDbContext context, ITaskService taskService, ITaskSchedulingService taskSchedulingService)
         {
             _context = context;
             _taskService = taskService;
+            _taskSchedulingService = taskSchedulingService;
         }
 
         [HttpGet]
@@ -53,7 +55,10 @@ namespace PlannerAPI.Controllers
                 Title = taskItem.Title,
                 Description = taskItem.Description,
                 IsDone = taskItem.IsDone,
-                ProjectId = taskItem.ProjectId
+                ProjectId = taskItem.ProjectId,
+                StartDate = taskItem.StartDate,
+                EndDate = taskItem.EndDate,
+                Duration = taskItem.Duration
             };
 
             return Ok(dto);
@@ -86,9 +91,13 @@ namespace PlannerAPI.Controllers
             taskItem.Title = dto.Title;
             taskItem.Description = dto.Description;
             taskItem.IsDone = dto.IsDone;
-            taskItem.ProjectId = dto.ProjectId;
+            taskItem.ProjectId = dto.ProjectId;                
+            taskItem.StartDate = dto.StartDate;
+            taskItem.EndDate = dto.EndDate;
+            taskItem.Duration = dto.Duration;
 
             await _context.SaveChangesAsync();
+            await _taskSchedulingService.RecalculateTaskDatesAsync(taskItem.Id);
 
             return NoContent();
         }
