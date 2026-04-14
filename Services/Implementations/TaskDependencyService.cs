@@ -33,6 +33,25 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task AddDependencyAsync(TaskDependencyCreateDto dto)
         {
+            var predecessorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.PredecessorId);
+            var successorExists = await _context.Tasks.AnyAsync(t => t.Id == dto.SuccessorId);
+
+            if (!predecessorExists || !successorExists)
+                throw new InvalidOperationException("Une ou plusieurs tâches sont introuvables.");
+
+            var dependencyExists = await _context.TaskDependencies.AnyAsync(td =>
+                td.PredecessorId == dto.PredecessorId &&
+                td.SuccessorId == dto.SuccessorId &&
+                td.Type == dto.Type);
+
+            if (dependencyExists)
+                throw new InvalidOperationException("Cette dépendance existe déjà.");
+
+            // ANTI-CYCLE 
+            var createsCycle = await CreatesCycleAsync(dto.PredecessorId, dto.SuccessorId);
+            if (createsCycle)
+                throw new InvalidOperationException("Cette dépendance créerait un cycle entre les tâches.");
+
             var dependency = new TaskDependency
             {
                 PredecessorId = dto.PredecessorId,
@@ -43,7 +62,7 @@ namespace PlannerAPI.Services.Implementations
             _context.TaskDependencies.Add(dependency);
             await _context.SaveChangesAsync();
 
-            // 🔥 recalcul des dates
+            // recalcul
             await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
         }
 
@@ -64,8 +83,58 @@ namespace PlannerAPI.Services.Implementations
 
             await _context.SaveChangesAsync();
 
-            // 🔥 recalcul après modif
+            // recalcul après modif
             await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
+
+            return true;
+        }
+
+                private async Task<bool> CreatesCycleAsync(int predecessorId, int successorId)
+        {
+            if (predecessorId == successorId)
+                return true;
+
+            var visited = new HashSet<int>();
+            return await HasPathToTargetAsync(successorId, predecessorId, visited);
+        }
+
+        private async Task<bool> HasPathToTargetAsync(int currentTaskId, int targetTaskId, HashSet<int> visited)
+        {
+            if (!visited.Add(currentTaskId))
+                return false;
+
+            var nextSuccessorIds = await _context.TaskDependencies
+                .Where(td => td.PredecessorId == currentTaskId)
+                .Select(td => td.SuccessorId)
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var nextId in nextSuccessorIds)
+            {
+                if (nextId == targetTaskId)
+                    return true;
+
+                var found = await HasPathToTargetAsync(nextId, targetTaskId, visited);
+                if (found)
+                    return true;
+            }
+
+            return false;
+        }
+        
+                public async Task<bool> DeleteAsync(int id)
+        {
+            var dependency = await _context.TaskDependencies.FindAsync(id);
+
+            if (dependency == null)
+                return false;
+
+            var successorId = dependency.SuccessorId;
+
+            _context.TaskDependencies.Remove(dependency);
+            await _context.SaveChangesAsync();
+
+            await _taskSchedulingService.RecalculateTaskDatesAsync(successorId);
 
             return true;
         }

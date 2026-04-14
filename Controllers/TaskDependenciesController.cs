@@ -27,9 +27,15 @@ namespace PlannerAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> AddDependency(TaskDependencyCreateDto dto)
         {
-            await _taskDependencyService.AddDependencyAsync(dto);
-            await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
-            return Ok();
+            try
+            {
+                await _taskDependencyService.AddDependencyAsync(dto);
+                return Ok("Dépendance créée avec succès.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpPut("{id}")]
@@ -40,6 +46,17 @@ namespace PlannerAPI.Controllers
             if (!updated)
                 return NotFound("Dépendance introuvable ou invalide.");
             await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var result = await _taskDependencyService.DeleteAsync(id);
+
+            if (!result)
+                return NotFound($"Dépendance avec l'id {id} introuvable.");
+
             return NoContent();
         }
     }

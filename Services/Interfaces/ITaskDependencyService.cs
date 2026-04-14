@@ -9,5 +9,7 @@ namespace PlannerAPI.Services.Interfaces
         Task AddDependencyAsync(TaskDependencyCreateDto dto);
 
         Task<bool> UpdateAsync(int id, TaskDependencyUpdateDto dto);
+
+        Task<bool> DeleteAsync(int id);
     }
 }
