@@ -17,7 +17,9 @@ namespace PlannerAPI.Data
         {
             base.OnModelCreating(modelBuilder);
 
-            // Project -> Tasks (cascade delete OK)
+            modelBuilder.Entity<PlannerTask>().ToTable("PlannerTasks");
+
+            // Project -> PlannerTasks (cascade delete OK)
             modelBuilder.Entity<PlannerTask>()
                 .HasOne(t => t.Project)
                 .WithMany(p => p.Tasks)
