@@ -26,7 +26,8 @@ namespace PlannerAPI.Services.Implementations
                     Id = td.Id,
                     PredecessorId = td.PredecessorId,
                     SuccessorId = td.SuccessorId,
-                    Type = td.Type
+                    Type = td.Type.ToString(),
+                    OffsetDays = td.OffsetDays
                 })
                 .ToListAsync();
         }
@@ -39,15 +40,16 @@ namespace PlannerAPI.Services.Implementations
             if (!predecessorExists || !successorExists)
                 throw new InvalidOperationException("Une ou plusieurs tâches sont introuvables.");
 
+            var parsedType = Enum.Parse<DependencyType>(dto.Type, true);
+
             var dependencyExists = await _context.TaskDependencies.AnyAsync(td =>
                 td.PredecessorId == dto.PredecessorId &&
                 td.SuccessorId == dto.SuccessorId &&
-                td.Type == dto.Type);
+                td.Type == parsedType.ToString());
 
             if (dependencyExists)
                 throw new InvalidOperationException("Cette dépendance existe déjà.");
 
-            // ANTI-CYCLE 
             var createsCycle = await CreatesCycleAsync(dto.PredecessorId, dto.SuccessorId);
             if (createsCycle)
                 throw new InvalidOperationException("Cette dépendance créerait un cycle entre les tâches.");
@@ -56,13 +58,13 @@ namespace PlannerAPI.Services.Implementations
             {
                 PredecessorId = dto.PredecessorId,
                 SuccessorId = dto.SuccessorId,
-                Type = dto.Type
+                Type = parsedType.ToString(),
+                OffsetDays = dto.OffsetDays
             };
 
             _context.TaskDependencies.Add(dependency);
             await _context.SaveChangesAsync();
 
-            // recalcul
             await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
         }
 
@@ -73,17 +75,18 @@ namespace PlannerAPI.Services.Implementations
             if (dependency == null)
                 return false;
 
-            // sécurité basique
             if (dto.PredecessorId == dto.SuccessorId)
                 return false;
 
+            var parsedType = Enum.Parse<DependencyType>(dto.Type, true);
+
             dependency.PredecessorId = dto.PredecessorId;
             dependency.SuccessorId = dto.SuccessorId;
-            dependency.Type = dto.Type;
+            dependency.Type = parsedType.ToString();
+            dependency.OffsetDays = dto.OffsetDays;
 
             await _context.SaveChangesAsync();
 
-            // recalcul après modif
             await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
 
             return true;

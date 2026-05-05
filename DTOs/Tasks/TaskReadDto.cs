@@ -1,6 +1,6 @@
 namespace PlannerAPI.DTOs.Tasks
 {
-    public class TaskReadDto
+   public class TaskReadDto
     {
         public int Id { get; set; }
         public string Title { get; set; } = string.Empty;
@@ -11,5 +11,11 @@ namespace PlannerAPI.DTOs.Tasks
         public DateTime? StartDate { get; set; }
         public DateTime? EndDate { get; set; }
         public int? Duration { get; set; }
+
+        public int? ActualDuration { get; set; }
+        public int? AssignedResourcesCount { get; set; }
+        public decimal? WorkloadHours { get; set; }
+
+        public bool IsCritical { get; set; }
     }
 }

@@ -20,9 +20,21 @@ namespace PlannerAPI.Models
 
         public DateTime? StartDate { get; set; }
         public DateTime? EndDate { get; set; }
+
+        // durée utilisée par ton moteur
         public int? Duration { get; set; }
+
+        // nouvelles données métier
+        public int? ActualDuration { get; set; }
+        public int? AssignedResourcesCount { get; set; }
+        public decimal? WorkloadHours { get; set; }
+
+        // chemin critique
+        public bool IsCritical { get; set; } = false;
 
         public List<TaskDependency> Predecessors { get; set; } = new();
         public List<TaskDependency> Successors { get; set; } = new();
+
+        
     }
 }

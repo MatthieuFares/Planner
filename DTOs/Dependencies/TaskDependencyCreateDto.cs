@@ -12,6 +12,8 @@ namespace PlannerAPI.DTOs.Dependencies
         public int SuccessorId { get; set; }
 
         [Required]
-        public DependencyType Type { get; set; }
+        public string Type { get; set; } = "FS";
+
+        public int OffsetDays { get; set; } = 0;
     }
 }

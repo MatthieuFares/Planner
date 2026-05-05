@@ -32,7 +32,11 @@ namespace PlannerAPI.Services.Implementations
                 ProjectId = dto.ProjectId,
                 StartDate = dto.StartDate,
                 EndDate = dto.EndDate,
-                Duration = dto.Duration
+                Duration = dto.Duration,
+
+                ActualDuration = dto.ActualDuration,
+                AssignedResourcesCount = dto.AssignedResourcesCount,
+                WorkloadHours = dto.WorkloadHours
             };
 
             _context.Tasks.Add(taskItem);
@@ -49,7 +53,13 @@ namespace PlannerAPI.Services.Implementations
                 ProjectId = taskItem.ProjectId,
                 StartDate = taskItem.StartDate,
                 EndDate = taskItem.EndDate,
-                Duration = taskItem.Duration
+                Duration = taskItem.Duration,
+
+                ActualDuration = taskItem.ActualDuration,
+                AssignedResourcesCount = taskItem.AssignedResourcesCount,
+                WorkloadHours = taskItem.WorkloadHours,
+
+                IsCritical = taskItem.IsCritical
             };
         }
     }

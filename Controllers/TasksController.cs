@@ -21,8 +21,9 @@ namespace PlannerAPI.Controllers
             _taskSchedulingService = taskSchedulingService;
         }
 
+        // GET ALL
         [HttpGet]
-        public async System.Threading.Tasks.Task<ActionResult<IEnumerable<TaskReadDto>>> GetTasks()
+        public async Task<ActionResult<IEnumerable<TaskReadDto>>> GetTasks()
         {
             var tasks = await _context.Tasks
                 .Select(t => new TaskReadDto
@@ -34,15 +35,24 @@ namespace PlannerAPI.Controllers
                     ProjectId = t.ProjectId,
                     StartDate = t.StartDate,
                     EndDate = t.EndDate,
-                    Duration = t.Duration
+                    Duration = t.Duration,
+
+                    // nouveaux champs
+                    ActualDuration = t.ActualDuration,
+                    AssignedResourcesCount = t.AssignedResourcesCount,
+                    WorkloadHours = t.WorkloadHours,
+
+                    // critique
+                    IsCritical = t.IsCritical
                 })
                 .ToListAsync();
 
             return Ok(tasks);
         }
 
+        // GET BY ID
         [HttpGet("{id}")]
-        public async System.Threading.Tasks.Task<ActionResult<TaskReadDto>> GetTaskById(int id)
+        public async Task<ActionResult<TaskReadDto>> GetTaskById(int id)
         {
             var taskItem = await _context.Tasks.FindAsync(id);
 
@@ -58,12 +68,21 @@ namespace PlannerAPI.Controllers
                 ProjectId = taskItem.ProjectId,
                 StartDate = taskItem.StartDate,
                 EndDate = taskItem.EndDate,
-                Duration = taskItem.Duration
+                Duration = taskItem.Duration,
+
+                // nouveaux champs
+                ActualDuration = taskItem.ActualDuration,
+                AssignedResourcesCount = taskItem.AssignedResourcesCount,
+                WorkloadHours = taskItem.WorkloadHours,
+
+                // critique
+                IsCritical = taskItem.IsCritical
             };
 
             return Ok(dto);
         }
 
+        // CREATE
         [HttpPost]
         public async Task<ActionResult<TaskReadDto>> CreateTask(TaskCreateDto dto)
         {
@@ -75,8 +94,9 @@ namespace PlannerAPI.Controllers
             return CreatedAtAction(nameof(GetTaskById), new { id = result.Id }, result);
         }
 
+        // UPDATE
         [HttpPut("{id}")]
-        public async System.Threading.Tasks.Task<IActionResult> UpdateTask(int id, TaskUpdateDto dto)
+        public async Task<IActionResult> UpdateTask(int id, TaskUpdateDto dto)
         {
             var taskItem = await _context.Tasks.FindAsync(id);
 
@@ -91,19 +111,27 @@ namespace PlannerAPI.Controllers
             taskItem.Title = dto.Title;
             taskItem.Description = dto.Description;
             taskItem.IsDone = dto.IsDone;
-            taskItem.ProjectId = dto.ProjectId;                
+            taskItem.ProjectId = dto.ProjectId;
             taskItem.StartDate = dto.StartDate;
             taskItem.EndDate = dto.EndDate;
             taskItem.Duration = dto.Duration;
 
+            // nouveaux champs
+            taskItem.ActualDuration = dto.ActualDuration;
+            taskItem.AssignedResourcesCount = dto.AssignedResourcesCount;
+            taskItem.WorkloadHours = dto.WorkloadHours;
+
             await _context.SaveChangesAsync();
+
+            // recalcul + critique (branché derrière normalement)
             await _taskSchedulingService.RecalculateTaskDatesAsync(taskItem.Id);
 
             return NoContent();
         }
 
+        // DELETE
         [HttpDelete("{id}")]
-        public async System.Threading.Tasks.Task<IActionResult> DeleteTask(int id)
+        public async Task<IActionResult> DeleteTask(int id)
         {
             var taskItem = await _context.Tasks.FindAsync(id);
 

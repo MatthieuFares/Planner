@@ -10,6 +10,8 @@ namespace PlannerAPI.Models
         public int SuccessorId { get; set; }
         public PlannerTask? Successor { get; set; }
 
-        public DependencyType Type { get; set; }
+        public string Type { get; set; } = "FS";
+
+        public int OffsetDays { get; set; } = 0;
     }
 }

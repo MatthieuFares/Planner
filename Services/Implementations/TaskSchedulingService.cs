@@ -16,8 +16,14 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task RecalculateTaskDatesAsync(int taskId)
         {
-            var visited = new HashSet<int>();
-            await RecalculateTaskDatesInternalAsync(taskId, visited);
+            await RecalculateTaskDatesInternalAsync(taskId, new HashSet<int>());
+
+            var task = await _context.Tasks.FirstOrDefaultAsync(t => t.Id == taskId);
+
+            if (task != null)
+            {
+                await CalculateCriticalPathAsync(task.ProjectId);
+            }
         }
 
         private async Task RecalculateTaskDatesInternalAsync(int taskId, HashSet<int> visited)
@@ -48,35 +54,47 @@ namespace PlannerAPI.Services.Implementations
 
                 switch (dependency.Type)
                 {
-                    case DependencyType.FS:
-                        // Le successeur commence quand le prédécesseur finit
+                    case "FS":
+                        // Le successeur commence quand le prédécesseur finit + offset
                         if (predecessor.EndDate.HasValue)
                         {
-                            latestStartConstraint = MaxDate(latestStartConstraint, predecessor.EndDate.Value);
+                            latestStartConstraint = MaxDate(
+                                latestStartConstraint,
+                                predecessor.EndDate.Value.AddDays(dependency.OffsetDays)
+                            );
                         }
                         break;
 
-                    case DependencyType.SS:
-                        // Le successeur commence quand le prédécesseur commence
+                    case "SS":
+                        // Le successeur commence quand le prédécesseur commence + offset
                         if (predecessor.StartDate.HasValue)
                         {
-                            latestStartConstraint = MaxDate(latestStartConstraint, predecessor.StartDate.Value);
+                            latestStartConstraint = MaxDate(
+                                latestStartConstraint,
+                                predecessor.StartDate.Value.AddDays(dependency.OffsetDays)
+                            );
                         }
                         break;
 
-                    case DependencyType.FF:
-                        // Le successeur finit quand le prédécesseur finit
+                    case "FF":
+                        // Le successeur finit quand le prédécesseur finit + offset
                         if (predecessor.EndDate.HasValue)
                         {
-                            latestEndConstraint = MaxDate(latestEndConstraint, predecessor.EndDate.Value);
+                            latestEndConstraint = MaxDate(
+                                latestEndConstraint,
+                                predecessor.EndDate.Value.AddDays(dependency.OffsetDays)
+                            );
                         }
                         break;
 
-                    case DependencyType.SF:
-                        // Le successeur finit quand le prédécesseur commence
+                    case "SF":
+                        // Le successeur finit quand le prédécesseur commence + offset
                         if (predecessor.StartDate.HasValue)
                         {
-                            latestEndConstraint = MaxDate(latestEndConstraint, predecessor.StartDate.Value);
+                            latestEndConstraint = MaxDate(
+                                latestEndConstraint,
+                                predecessor.StartDate.Value.AddDays(dependency.OffsetDays)
+                            );
                         }
                         break;
                 }
@@ -161,6 +179,61 @@ namespace PlannerAPI.Services.Implementations
             return !current.HasValue || candidate > current.Value
                 ? candidate
                 : current.Value;
+        }
+
+        public async Task CalculateCriticalPathAsync(int projectId)
+        {
+            var tasks = await _context.Tasks
+                .Where(t => t.ProjectId == projectId)
+                .Include(t => t.Predecessors)
+                    .ThenInclude(d => d.Predecessor)
+                .ToListAsync();
+
+            if (!tasks.Any())
+                return;
+
+            // reset
+            foreach (var task in tasks)
+                task.IsCritical = false;
+
+            var lastTask = tasks
+                .Where(t => t.EndDate.HasValue)
+                .OrderByDescending(t => t.EndDate)
+                .FirstOrDefault();
+
+            if (lastTask == null)
+                return;
+
+            var criticalIds = new HashSet<int>();
+
+            MarkCriticalChain(lastTask, criticalIds);
+
+            foreach (var task in tasks)
+            {
+                if (criticalIds.Contains(task.Id))
+                    task.IsCritical = true;
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        private void MarkCriticalChain(PlannerTask task, HashSet<int> criticalIds)
+        {
+            if (!criticalIds.Add(task.Id))
+                return;
+
+            var validPredecessors = task.Predecessors
+                .Where(d => d.Predecessor != null && d.Predecessor.EndDate.HasValue)
+                .ToList();
+
+            if (!validPredecessors.Any())
+                return;
+
+            var best = validPredecessors
+                .OrderByDescending(d => d.Predecessor!.EndDate)
+                .First();
+
+            MarkCriticalChain(best.Predecessor!, criticalIds);
         }
     }
 }
