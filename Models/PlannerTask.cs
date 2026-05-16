@@ -34,6 +34,8 @@ namespace PlannerAPI.Models
 
         public List<TaskDependency> Predecessors { get; set; } = new();
         public List<TaskDependency> Successors { get; set; } = new();
+        public List<ResourceAssignment> ResourceAssignments { get; set; } = new();
+        
 
         
     }
