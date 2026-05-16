@@ -12,6 +12,9 @@ builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<ITaskDependencyService, TaskDependencyService>();
 builder.Services.AddScoped<ITaskSchedulingService, TaskSchedulingService>();
 builder.Services.AddScoped<IResourceService, ResourceService>();
+builder.Services.AddScoped<IResourceAssignmentService, ResourceAssignmentService>();
+builder.Services.AddScoped<IResourceAnalysisService, ResourceAnalysisService>();
+builder.Services.AddScoped<IResourceGroupService, ResourceGroupService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 

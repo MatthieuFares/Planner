@@ -14,6 +14,8 @@ namespace PlannerAPI.Data
         public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
         public DbSet<Resource> Resources { get; set; }
         public DbSet<ResourceAssignment> ResourceAssignments { get; set; }
+        public DbSet<ResourceGroup> ResourceGroups { get; set; }
+        public DbSet<ResourceGroupMember> ResourceGroupMembers { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -58,6 +60,22 @@ namespace PlannerAPI.Data
                 .WithMany(r => r.Assignments)
                 .HasForeignKey(ra => ra.ResourceId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ResourceGroupMember>()
+                .HasOne(rgm => rgm.ResourceGroup)
+                .WithMany(rg => rg.Members)
+                .HasForeignKey(rgm => rgm.ResourceGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ResourceGroupMember>()
+                .HasOne(rgm => rgm.Resource)
+                .WithMany()
+                .HasForeignKey(rgm => rgm.ResourceId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ResourceGroupMember>()
+                .HasIndex(rgm => new { rgm.ResourceGroupId, rgm.ResourceId })
+                .IsUnique();
         }
     }
 }
