@@ -12,6 +12,8 @@ namespace PlannerAPI.Data
         public DbSet<Project> Projects => Set<Project>();
         public DbSet<PlannerTask> Tasks => Set<PlannerTask>();
         public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
+        public DbSet<Resource> Resources { get; set; }
+        public DbSet<ResourceAssignment> ResourceAssignments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -44,6 +46,18 @@ namespace PlannerAPI.Data
             modelBuilder.Entity<TaskDependency>()
                 .HasIndex(td => new { td.PredecessorId, td.SuccessorId, td.Type })
                 .IsUnique();
+
+            modelBuilder.Entity<ResourceAssignment>()
+                .HasOne(ra => ra.Task)
+                .WithMany(t => t.ResourceAssignments)
+                .HasForeignKey(ra => ra.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ResourceAssignment>()
+                .HasOne(ra => ra.Resource)
+                .WithMany(r => r.Assignments)
+                .HasForeignKey(ra => ra.ResourceId)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }
