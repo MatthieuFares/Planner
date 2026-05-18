@@ -1,0 +1,153 @@
+Ordre de démo
+1. Projet
+POST /api/projects
+
+Montre que tu crées le conteneur projet.
+
+2. Tâches
+POST /api/tasks
+
+Tu crées :
+
+Analyse
+Conception API
+Développement
+Tests QA
+Documentation courte
+
+Phrase :
+
+Les tâches portent les dates, la durée, la charge prévue, l’état d’avancement et les champs de suivi.
+
+3. Dépendances
+POST /api/taskdependencies
+
+Tu ajoutes :
+
+Analyse → Conception
+Conception → Développement avec offset +1
+Développement → Tests QA
+Analyse → Documentation courte
+
+Phrase :
+
+Les dépendances permettent au moteur de recalculer automatiquement les dates et de propager les impacts.
+
+4. Gantt backend
+GET /api/gantt/project/1
+
+Montre :
+
+dates recalculées
+dépendances
+offsets
+earlyStart / lateStart
+totalFloat
+isCritical
+
+Phrase :
+
+Cet endpoint prépare directement les données pour un futur affichage Gantt côté front.
+
+5. Ressources
+POST /api/resources
+
+Tu crées :
+
+Equipe Backend
+Equipe QA
+Alice Martin
+
+Phrase :
+
+Les ressources peuvent représenter des équipes ou des personnes, avec capacité et coût horaire.
+
+6. Groupes
+POST /api/resourcegroups
+POST /api/resourcegroups/members
+
+Phrase :
+
+Les groupes permettent de structurer les ressources en équipes projet réutilisables.
+
+7. Assignations
+POST /api/resourceassignments
+
+Tu assignes :
+
+Analyse → Alice
+Conception → Backend
+Développement → Backend
+Tests QA → QA
+
+Laisse Documentation courte sans assignation pour montrer les warnings.
+
+8. Analyse ressources
+GET /api/resourceanalysis/project/1
+
+Montre :
+
+charge totale
+coût estimé
+charge par ressource
+taux d’utilisation
+surcharge
+
+Phrase :
+
+L’API est capable de calculer la charge et le coût projet à partir des assignations.
+
+9. Summary projet
+GET /api/projects/1/summary
+
+Montre :
+
+durée projet
+nombre de tâches
+tâches critiques/non critiques
+dépendances
+ressources
+groupes
+charge totale
+coût total
+
+Phrase :
+
+Ce résumé centralise les indicateurs clés du projet.
+
+10. Warnings projet
+GET /api/projects/1/warnings
+
+Montre :
+
+tâches critiques
+documentation courte sans ressource
+
+Phrase :
+
+Cet endpoint détecte automatiquement des points d’attention projet.
+
+Effet démo bonus
+
+Si tu as le temps :
+
+PUT /api/tasks/5
+
+Tu rallonges Documentation courte.
+
+Puis :
+
+GET /api/tasks
+
+Montre que :
+
+totalFloat change
+la tâche reste non critique tant qu’elle garde de la marge
+
+Phrase :
+
+Le CPM est recalculé automatiquement après modification du planning.
+
+Conclusion
+
+La V1 backend n’est pas un simple CRUD : elle pose un moteur de planification exploitable, avec dépendances, criticité, ressources, analyse et alertes. Le prochain chantier naturel est le front Gantt et le dashboard.
