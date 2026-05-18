@@ -132,5 +132,36 @@ namespace PlannerAPI.Services.Implementations
 
             return true;
         }
+
+        public async Task<bool> UpdateAsync(int id, ResourceGroupUpdateDto dto)
+        {
+            var group = await _context.ResourceGroups.FindAsync(id);
+
+            if (group == null)
+                return false;
+
+            group.Name = dto.Name;
+            group.Description = dto.Description;
+
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
+
+        public async Task<bool> DeleteAsync(int id)
+        {
+            var group = await _context.ResourceGroups
+                .Include(g => g.Members)
+                .FirstOrDefaultAsync(g => g.Id == id);
+
+            if (group == null)
+                return false;
+
+            _context.ResourceGroups.Remove(group);
+
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
     }
 }

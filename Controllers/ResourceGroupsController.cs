@@ -63,5 +63,26 @@ namespace PlannerAPI.Controllers
 
             return NoContent();
         }
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, ResourceGroupUpdateDto dto)
+        {
+            var updated = await _groupService.UpdateAsync(id, dto);
+
+            if (!updated)
+                return NotFound();
+
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var deleted = await _groupService.DeleteAsync(id);
+
+            if (!deleted)
+                return NotFound();
+
+            return NoContent();
+        }
     }
 }

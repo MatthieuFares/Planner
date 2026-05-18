@@ -28,8 +28,6 @@ namespace PlannerAPI.Services.Implementations
 
         private async Task RecalculateTaskDatesInternalAsync(int taskId, HashSet<int> visited)
         {
-            // Sécurité supplémentaire : évite de recalculer 2 fois la même tâche
-            // dans une même cascade, et protège localement d'une boucle accidentelle.
             if (!visited.Add(taskId))
                 return;
 
@@ -187,53 +185,139 @@ namespace PlannerAPI.Services.Implementations
                 .Where(t => t.ProjectId == projectId)
                 .Include(t => t.Predecessors)
                     .ThenInclude(d => d.Predecessor)
+                .Include(t => t.Successors)
+                    .ThenInclude(d => d.Successor)
                 .ToListAsync();
 
             if (!tasks.Any())
                 return;
 
-            // reset
-            foreach (var task in tasks)
-                task.IsCritical = false;
-
-            var lastTask = tasks
-                .Where(t => t.EndDate.HasValue)
-                .OrderByDescending(t => t.EndDate)
-                .FirstOrDefault();
-
-            if (lastTask == null)
-                return;
-
-            var criticalIds = new HashSet<int>();
-
-            MarkCriticalChain(lastTask, criticalIds);
-
             foreach (var task in tasks)
             {
-                if (criticalIds.Contains(task.Id))
-                    task.IsCritical = true;
+                task.EarlyStart = task.StartDate;
+                task.EarlyFinish = task.EndDate;
+                task.LateStart = null;
+                task.LateFinish = null;
+                task.TotalFloat = null;
+                task.IsCritical = false;
+            }
+
+            var projectEndDate = tasks
+                .Where(t => t.EarlyFinish.HasValue)
+                .Max(t => t.EarlyFinish);
+
+            if (!projectEndDate.HasValue)
+            {
+                await _context.SaveChangesAsync();
+                return;
+            }
+
+            var endTasks = tasks
+                .Where(t => !t.Successors.Any())
+                .ToList();
+
+            foreach (var task in endTasks)
+            {
+                task.LateFinish = projectEndDate.Value;
+
+                if (task.Duration.HasValue)
+                    task.LateStart = task.LateFinish.Value.AddDays(-task.Duration.Value);
+            }
+
+            var orderedTasks = tasks
+                .Where(t => t.EndDate.HasValue)
+                .OrderByDescending(t => t.EndDate)
+                .ToList();
+
+            foreach (var task in orderedTasks)
+            {
+                if (!task.Successors.Any())
+                    continue;
+
+                DateTime? candidateLateStart = null;
+                DateTime? candidateLateFinish = null;
+
+                foreach (var dependency in task.Successors)
+                {
+                    var successor = dependency.Successor;
+
+                    if (successor == null)
+                        continue;
+
+                    switch (dependency.Type)
+                    {
+                        case "FS":
+                            if (successor.LateStart.HasValue)
+                            {
+                                var candidate = successor.LateStart.Value.AddDays(-dependency.OffsetDays);
+                                candidateLateFinish = MinDate(candidateLateFinish, candidate);
+                            }
+                            break;
+
+                        case "SS":
+                            if (successor.LateStart.HasValue)
+                            {
+                                var candidate = successor.LateStart.Value.AddDays(-dependency.OffsetDays);
+                                candidateLateStart = MinDate(candidateLateStart, candidate);
+                            }
+                            break;
+
+                        case "FF":
+                            if (successor.LateFinish.HasValue)
+                            {
+                                var candidate = successor.LateFinish.Value.AddDays(-dependency.OffsetDays);
+                                candidateLateFinish = MinDate(candidateLateFinish, candidate);
+                            }
+                            break;
+
+                        case "SF":
+                            if (successor.LateFinish.HasValue)
+                            {
+                                var candidate = successor.LateFinish.Value.AddDays(-dependency.OffsetDays);
+                                candidateLateStart = MinDate(candidateLateStart, candidate);
+                            }
+                            break;
+                    }
+                }
+
+                if (task.Duration.HasValue)
+                {
+                    if (candidateLateFinish.HasValue)
+                    {
+                        task.LateFinish = candidateLateFinish.Value;
+                        task.LateStart = task.LateFinish.Value.AddDays(-task.Duration.Value);
+                    }
+                    else if (candidateLateStart.HasValue)
+                    {
+                        task.LateStart = candidateLateStart.Value;
+                        task.LateFinish = task.LateStart.Value.AddDays(task.Duration.Value);
+                    }
+                }
+
+                if (task.EarlyStart.HasValue && task.LateStart.HasValue)
+                {
+                    task.TotalFloat = (task.LateStart.Value - task.EarlyStart.Value).Days;
+                    task.IsCritical = task.TotalFloat == 0;
+                }
+            }
+
+            foreach (var task in endTasks)
+            {
+                if (task.EarlyStart.HasValue && task.LateStart.HasValue)
+                {
+                    task.TotalFloat = (task.LateStart.Value - task.EarlyStart.Value).Days;
+                    task.IsCritical = task.TotalFloat == 0;
+                }
             }
 
             await _context.SaveChangesAsync();
         }
-
-        private void MarkCriticalChain(PlannerTask task, HashSet<int> criticalIds)
+        private DateTime? MinDate(DateTime? current, DateTime candidate)
         {
-            if (!criticalIds.Add(task.Id))
-                return;
+            if (!current.HasValue || candidate < current.Value)
+                return candidate;
 
-            var validPredecessors = task.Predecessors
-                .Where(d => d.Predecessor != null && d.Predecessor.EndDate.HasValue)
-                .ToList();
-
-            if (!validPredecessors.Any())
-                return;
-
-            var best = validPredecessors
-                .OrderByDescending(d => d.Predecessor!.EndDate)
-                .First();
-
-            MarkCriticalChain(best.Predecessor!, criticalIds);
+            return current;
         }
     }
 }

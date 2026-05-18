@@ -15,6 +15,8 @@ builder.Services.AddScoped<IResourceService, ResourceService>();
 builder.Services.AddScoped<IResourceAssignmentService, ResourceAssignmentService>();
 builder.Services.AddScoped<IResourceAnalysisService, ResourceAnalysisService>();
 builder.Services.AddScoped<IResourceGroupService, ResourceGroupService>();
+builder.Services.AddScoped<IProjectSummaryService, ProjectSummaryService>();
+builder.Services.AddScoped<IProjectWarningService, ProjectWarningService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 

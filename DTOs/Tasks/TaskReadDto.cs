@@ -15,7 +15,11 @@ namespace PlannerAPI.DTOs.Tasks
         public int? ActualDuration { get; set; }
         public int? AssignedResourcesCount { get; set; }
         public decimal? WorkloadHours { get; set; }
-
         public bool IsCritical { get; set; }
+        public DateTime? EarlyStart { get; set; }
+        public DateTime? EarlyFinish { get; set; }
+        public DateTime? LateStart { get; set; }
+        public DateTime? LateFinish { get; set; }
+        public int? TotalFloat { get; set; }
     }
 }

@@ -36,14 +36,15 @@ namespace PlannerAPI.Controllers
                     StartDate = t.StartDate,
                     EndDate = t.EndDate,
                     Duration = t.Duration,
-
-                    // nouveaux champs
                     ActualDuration = t.ActualDuration,
                     AssignedResourcesCount = t.AssignedResourcesCount,
                     WorkloadHours = t.WorkloadHours,
-
-                    // critique
-                    IsCritical = t.IsCritical
+                    IsCritical = t.IsCritical,
+                    EarlyStart = t.EarlyStart,
+                    EarlyFinish = t.EarlyFinish,
+                    LateStart = t.LateStart,
+                    LateFinish = t.LateFinish,
+                    TotalFloat = t.TotalFloat,
                 })
                 .ToListAsync();
 
@@ -69,14 +70,15 @@ namespace PlannerAPI.Controllers
                 StartDate = taskItem.StartDate,
                 EndDate = taskItem.EndDate,
                 Duration = taskItem.Duration,
-
-                // nouveaux champs
                 ActualDuration = taskItem.ActualDuration,
                 AssignedResourcesCount = taskItem.AssignedResourcesCount,
                 WorkloadHours = taskItem.WorkloadHours,
-
-                // critique
-                IsCritical = taskItem.IsCritical
+                IsCritical = taskItem.IsCritical,
+                EarlyStart = taskItem.EarlyStart,
+                EarlyFinish = taskItem.EarlyFinish,
+                LateStart = taskItem.LateStart,
+                LateFinish = taskItem.LateFinish,
+                TotalFloat = taskItem.TotalFloat
             };
 
             return Ok(dto);

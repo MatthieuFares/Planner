@@ -27,6 +27,8 @@ namespace PlannerAPI.Controllers
             var tasks = await _context.Tasks
                 .Where(t => t.ProjectId == projectId)
                 .Include(t => t.Predecessors)
+                .Include(t => t.ResourceAssignments)
+                .ThenInclude(ra => ra.Resource)
                 .OrderBy(t => t.StartDate)
                 .Select(t => new GanttTaskDto
                 {
@@ -40,7 +42,20 @@ namespace PlannerAPI.Controllers
                     ActualDuration = t.ActualDuration,
                     AssignedResourcesCount = t.AssignedResourcesCount,
                     WorkloadHours = t.WorkloadHours,
-
+                    EarlyStart = t.EarlyStart,
+                    EarlyFinish = t.EarlyFinish,
+                    LateStart = t.LateStart,
+                    LateFinish = t.LateFinish,
+                    TotalFloat = t.TotalFloat,
+                    ResourceAssignments = t.ResourceAssignments.Select(ra => new GanttResourceAssignmentDto
+                    {
+                        AssignmentId = ra.Id,
+                        ResourceId = ra.ResourceId,
+                        ResourceName = ra.Resource!.Name,
+                        ResourceType = ra.Resource.Type,
+                        WorkloadHours = ra.WorkloadHours,
+                        AllocationPercent = ra.AllocationPercent
+                    }).ToList(),
                     Dependencies = t.Predecessors.Select(d => new GanttDependencyDto
                     {
                         Id = d.Id,

@@ -1,0 +1,166 @@
+POST /api/projects
+{
+  "name": "Projet Démo V1",
+  "description": "Tour complet des fonctionnalités Planner API"
+}
+
+
+2. Ressources
+POST /api/resources
+{
+  "name": "Equipe Backend",
+  "type": "Team",
+  "capacityHoursPerWeek": 140,
+  "costPerHour": 70
+}
+{
+  "name": "Equipe QA",
+  "type": "Team",
+  "capacityHoursPerWeek": 70,
+  "costPerHour": 45
+}
+{
+  "name": "Alice Martin",
+  "type": "Person",
+  "capacityHoursPerWeek": 35,
+  "costPerHour": 55
+}
+
+3. Tâches
+POST /api/tasks
+{
+  "title": "Analyse",
+  "description": "Analyse fonctionnelle",
+  "isDone": false,
+  "projectId": 1,
+  "startDate": "2026-11-01T00:00:00",
+  "endDate": "2026-11-03T00:00:00",
+  "duration": 2,
+  "actualDuration": null,
+  "assignedResourcesCount": 1,
+  "workloadHours": 12
+}
+{
+  "title": "Conception API",
+  "description": "Architecture backend",
+  "isDone": false,
+  "projectId": 1,
+  "startDate": "2026-11-03T00:00:00",
+  "endDate": "2026-11-07T00:00:00",
+  "duration": 4,
+  "actualDuration": null,
+  "assignedResourcesCount": 2,
+  "workloadHours": 28
+}
+{
+  "title": "Développement",
+  "description": "Implémentation services",
+  "isDone": false,
+  "projectId": 1,
+  "startDate": "2026-11-07T00:00:00",
+  "endDate": "2026-11-13T00:00:00",
+  "duration": 6,
+  "actualDuration": null,
+  "assignedResourcesCount": 3,
+  "workloadHours": 42
+}
+{
+  "title": "Tests QA",
+  "description": "Validation et tests",
+  "isDone": false,
+  "projectId": 1,
+  "startDate": "2026-11-13T00:00:00",
+  "endDate": "2026-11-15T00:00:00",
+  "duration": 2,
+  "actualDuration": null,
+  "assignedResourcesCount": 1,
+  "workloadHours": 14
+}
+{
+  "title": "Documentation courte",
+  "description": "Branche parallèle non critique",
+  "isDone": false,
+  "projectId": 1,
+  "startDate": "2026-11-03T00:00:00",
+  "endDate": "2026-11-06T00:00:00",
+  "duration": 3,
+  "actualDuration": null,
+  "assignedResourcesCount": 1,
+  "workloadHours": 10
+}
+
+4. Dépendances
+POST /api/taskdependencies
+{
+  "predecessorId": 1,
+  "successorId": 2,
+  "type": "FS",
+  "offsetDays": 0
+}
+{
+  "predecessorId": 2,
+  "successorId": 3,
+  "type": "FS",
+  "offsetDays": 1
+}
+{
+  "predecessorId": 3,
+  "successorId": 4,
+  "type": "FS",
+  "offsetDays": 0
+}
+{
+  "predecessorId": 1,
+  "successorId": 5,
+  "type": "FS",
+  "offsetDays": 0
+}
+
+5. Groupe
+POST /api/resourcegroups
+{
+  "name": "Equipe Projet Alpha",
+  "description": "Equipe transverse principale"
+}
+
+6. Membres du groupe
+POST /api/resourcegroups/members
+{
+  "resourceGroupId": 1,
+  "resourceId": 1
+}
+{
+  "resourceGroupId": 1,
+  "resourceId": 2
+}
+{
+  "resourceGroupId": 1,
+  "resourceId": 3
+}
+
+7. Assignations
+POST /api/resourceassignments
+{
+  "taskId": 1,
+  "resourceId": 3,
+  "workloadHours": 12,
+  "allocationPercent": 100
+}
+{
+  "taskId": 2,
+  "resourceId": 1,
+  "workloadHours": 28,
+  "allocationPercent": 100
+}
+{
+  "taskId": 3,
+  "resourceId": 1,
+  "workloadHours": 42,
+  "allocationPercent": 100
+}
+{
+  "taskId": 4,
+  "resourceId": 2,
+  "workloadHours": 14,
+  "allocationPercent": 100
+}
