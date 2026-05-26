@@ -36,7 +36,8 @@ namespace PlannerAPI.Services.Implementations
 
                 ActualDuration = dto.ActualDuration,
                 AssignedResourcesCount = dto.AssignedResourcesCount,
-                WorkloadHours = dto.WorkloadHours
+                WorkloadHours = dto.WorkloadHours,
+                ProgressPercent = dto.ProgressPercent,
             };
 
             _context.Tasks.Add(taskItem);
@@ -58,7 +59,7 @@ namespace PlannerAPI.Services.Implementations
                 ActualDuration = taskItem.ActualDuration,
                 AssignedResourcesCount = taskItem.AssignedResourcesCount,
                 WorkloadHours = taskItem.WorkloadHours,
-
+                ProgressPercent = taskItem.ProgressPercent,
                 IsCritical = taskItem.IsCritical
             };
         }

@@ -45,6 +45,7 @@ namespace PlannerAPI.Controllers
                     LateStart = t.LateStart,
                     LateFinish = t.LateFinish,
                     TotalFloat = t.TotalFloat,
+                    ProgressPercent = t.ProgressPercent,
                 })
                 .ToListAsync();
 
@@ -78,7 +79,8 @@ namespace PlannerAPI.Controllers
                 EarlyFinish = taskItem.EarlyFinish,
                 LateStart = taskItem.LateStart,
                 LateFinish = taskItem.LateFinish,
-                TotalFloat = taskItem.TotalFloat
+                TotalFloat = taskItem.TotalFloat,
+                ProgressPercent = taskItem.ProgressPercent,
             };
 
             return Ok(dto);
@@ -112,20 +114,17 @@ namespace PlannerAPI.Controllers
 
             taskItem.Title = dto.Title;
             taskItem.Description = dto.Description;
-            taskItem.IsDone = dto.IsDone;
             taskItem.ProjectId = dto.ProjectId;
             taskItem.StartDate = dto.StartDate;
             taskItem.EndDate = dto.EndDate;
             taskItem.Duration = dto.Duration;
-
-            // nouveaux champs
             taskItem.ActualDuration = dto.ActualDuration;
             taskItem.AssignedResourcesCount = dto.AssignedResourcesCount;
             taskItem.WorkloadHours = dto.WorkloadHours;
-
+            taskItem.ProgressPercent = dto.ProgressPercent;
+            
+            taskItem.IsDone = dto.ProgressPercent >= 100;
             await _context.SaveChangesAsync();
-
-            // recalcul + critique (branché derrière normalement)
             await _taskSchedulingService.RecalculateTaskDatesAsync(taskItem.Id);
 
             return NoContent();

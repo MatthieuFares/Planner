@@ -22,5 +22,6 @@ namespace PlannerAPI.DTOs.Tasks
         public int? ActualDuration { get; set; }
         public int? AssignedResourcesCount { get; set; }
         public decimal? WorkloadHours { get; set; }
+        public int ProgressPercent { get; set; } = 0 ;
     }
 }

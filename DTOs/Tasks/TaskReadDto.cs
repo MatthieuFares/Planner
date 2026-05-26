@@ -21,5 +21,6 @@ namespace PlannerAPI.DTOs.Tasks
         public DateTime? LateStart { get; set; }
         public DateTime? LateFinish { get; set; }
         public int? TotalFloat { get; set; }
+        public int ProgressPercent { get; set; }
     }
 }

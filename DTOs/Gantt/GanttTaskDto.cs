@@ -40,5 +40,6 @@ namespace PlannerAPI.DTOs.Gantt
         public string ResourceType { get; set; } = string.Empty;
         public decimal WorkloadHours { get; set; }
         public decimal? AllocationPercent { get; set; }
+        public int ProgressPercent { get; set; }
     }
 }
