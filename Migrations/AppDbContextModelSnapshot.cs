@@ -150,10 +150,13 @@ namespace PlannerAPI.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<decimal?>("AllocationPercent")
-                        .HasColumnType("decimal(18,2)");
+                    b.Property<int>("AllocationPercent")
+                        .HasColumnType("int");
 
-                    b.Property<int>("ResourceId")
+                    b.Property<int?>("ResourceGroupId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ResourceId")
                         .HasColumnType("int");
 
                     b.Property<int>("TaskId")
@@ -163,6 +166,8 @@ namespace PlannerAPI.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceGroupId");
 
                     b.HasIndex("ResourceId");
 
@@ -261,11 +266,15 @@ namespace PlannerAPI.Migrations
 
             modelBuilder.Entity("PlannerAPI.Models.ResourceAssignment", b =>
                 {
+                    b.HasOne("PlannerAPI.Models.ResourceGroup", "ResourceGroup")
+                        .WithMany()
+                        .HasForeignKey("ResourceGroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PlannerAPI.Models.Resource", "Resource")
                         .WithMany("Assignments")
                         .HasForeignKey("ResourceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PlannerAPI.Models.PlannerTask", "Task")
                         .WithMany("ResourceAssignments")
@@ -274,6 +283,8 @@ namespace PlannerAPI.Migrations
                         .IsRequired();
 
                     b.Navigation("Resource");
+
+                    b.Navigation("ResourceGroup");
 
                     b.Navigation("Task");
                 });

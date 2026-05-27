@@ -17,20 +17,36 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task<ResourceAssignmentReadDto> CreateAsync(ResourceAssignmentCreateDto dto)
         {
+            ValidateAssignmentTarget(dto.ResourceId, dto.ResourceGroupId);
+
             var taskExists = await _context.Tasks.AnyAsync(t => t.Id == dto.TaskId);
 
             if (!taskExists)
                 throw new InvalidOperationException("Tâche introuvable.");
 
-            var resource = await _context.Resources.FindAsync(dto.ResourceId);
+            if (dto.ResourceId.HasValue)
+            {
+                var resourceExists = await _context.Resources
+                    .AnyAsync(r => r.Id == dto.ResourceId.Value);
 
-            if (resource == null)
-                throw new InvalidOperationException("Ressource introuvable.");
+                if (!resourceExists)
+                    throw new InvalidOperationException("Ressource introuvable.");
+            }
+
+            if (dto.ResourceGroupId.HasValue)
+            {
+                var groupExists = await _context.ResourceGroups
+                    .AnyAsync(g => g.Id == dto.ResourceGroupId.Value);
+
+                if (!groupExists)
+                    throw new InvalidOperationException("Groupe de ressources introuvable.");
+            }
 
             var assignment = new ResourceAssignment
             {
                 TaskId = dto.TaskId,
                 ResourceId = dto.ResourceId,
+                ResourceGroupId = dto.ResourceGroupId,
                 WorkloadHours = dto.WorkloadHours,
                 AllocationPercent = dto.AllocationPercent
             };
@@ -39,37 +55,38 @@ namespace PlannerAPI.Services.Implementations
 
             await _context.SaveChangesAsync();
 
-            return new ResourceAssignmentReadDto
-            {
-                Id = assignment.Id,
-                TaskId = assignment.TaskId,
-                ResourceId = assignment.ResourceId,
-                ResourceName = resource.Name,
-                WorkloadHours = assignment.WorkloadHours,
-                AllocationPercent = assignment.AllocationPercent
-            };
+            var createdAssignment = await _context.ResourceAssignments
+                .Include(a => a.Task)
+                .Include(a => a.Resource)
+                .Include(a => a.ResourceGroup)
+                .FirstAsync(a => a.Id == assignment.Id);
+
+            return MapToReadDto(createdAssignment);
         }
 
         public async Task<IEnumerable<ResourceAssignmentReadDto>> GetByTaskIdAsync(int taskId)
         {
-            return await _context.ResourceAssignments
+            var taskExists = await _context.Tasks.AnyAsync(t => t.Id == taskId);
+
+            if (!taskExists)
+                throw new InvalidOperationException("Tâche introuvable.");
+
+            var assignments = await _context.ResourceAssignments
+                .Include(a => a.Task)
                 .Include(a => a.Resource)
+                .Include(a => a.ResourceGroup)
                 .Where(a => a.TaskId == taskId)
-                .Select(a => new ResourceAssignmentReadDto
-                {
-                    Id = a.Id,
-                    TaskId = a.TaskId,
-                    ResourceId = a.ResourceId,
-                    ResourceName = a.Resource!.Name,
-                    WorkloadHours = a.WorkloadHours,
-                    AllocationPercent = a.AllocationPercent
-                })
                 .ToListAsync();
+
+            return assignments.Select(MapToReadDto);
         }
 
         public async Task<bool> UpdateAsync(int id, ResourceAssignmentUpdateDto dto)
         {
-            var assignment = await _context.ResourceAssignments.FindAsync(id);
+            ValidateAssignmentTarget(dto.ResourceId, dto.ResourceGroupId);
+
+            var assignment = await _context.ResourceAssignments
+                .FirstOrDefaultAsync(a => a.Id == id);
 
             if (assignment == null)
                 return false;
@@ -77,15 +94,29 @@ namespace PlannerAPI.Services.Implementations
             var taskExists = await _context.Tasks.AnyAsync(t => t.Id == dto.TaskId);
 
             if (!taskExists)
-                return false;
+                throw new InvalidOperationException("Tâche introuvable.");
 
-            var resourceExists = await _context.Resources.AnyAsync(r => r.Id == dto.ResourceId);
+            if (dto.ResourceId.HasValue)
+            {
+                var resourceExists = await _context.Resources
+                    .AnyAsync(r => r.Id == dto.ResourceId.Value);
 
-            if (!resourceExists)
-                return false;
+                if (!resourceExists)
+                    throw new InvalidOperationException("Ressource introuvable.");
+            }
+
+            if (dto.ResourceGroupId.HasValue)
+            {
+                var groupExists = await _context.ResourceGroups
+                    .AnyAsync(g => g.Id == dto.ResourceGroupId.Value);
+
+                if (!groupExists)
+                    throw new InvalidOperationException("Groupe de ressources introuvable.");
+            }
 
             assignment.TaskId = dto.TaskId;
             assignment.ResourceId = dto.ResourceId;
+            assignment.ResourceGroupId = dto.ResourceGroupId;
             assignment.WorkloadHours = dto.WorkloadHours;
             assignment.AllocationPercent = dto.AllocationPercent;
 
@@ -106,6 +137,43 @@ namespace PlannerAPI.Services.Implementations
             await _context.SaveChangesAsync();
 
             return true;
+        }
+
+        private static void ValidateAssignmentTarget(int? resourceId, int? resourceGroupId)
+        {
+            if (!resourceId.HasValue && !resourceGroupId.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "Une assignation doit cibler une ressource ou un groupe."
+                );
+            }
+
+            if (resourceId.HasValue && resourceGroupId.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "Une assignation ne peut pas cibler une ressource et un groupe en même temps."
+                );
+            }
+        }
+
+        private static ResourceAssignmentReadDto MapToReadDto(ResourceAssignment assignment)
+        {
+            return new ResourceAssignmentReadDto
+            {
+                Id = assignment.Id,
+
+                TaskId = assignment.TaskId,
+                TaskTitle = assignment.Task?.Title,
+
+                ResourceId = assignment.ResourceId,
+                ResourceName = assignment.Resource?.Name,
+
+                ResourceGroupId = assignment.ResourceGroupId,
+                ResourceGroupName = assignment.ResourceGroup?.Name,
+
+                WorkloadHours = assignment.WorkloadHours,
+                AllocationPercent = assignment.AllocationPercent
+            };
         }
     }
 }

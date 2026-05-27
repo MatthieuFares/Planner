@@ -14,6 +14,44 @@ namespace PlannerAPI.Services.Implementations
             _context = context;
         }
 
+        private bool IsWorkingDay(DateTime date)
+        {
+            return date.DayOfWeek != DayOfWeek.Saturday &&
+                   date.DayOfWeek != DayOfWeek.Sunday;
+        }
+
+        private DateTime AddWorkingDays(DateTime date, int days)
+        {
+            var currentDate = date;
+            var remainingDays = days;
+
+            while (remainingDays > 0)
+            {
+                currentDate = currentDate.AddDays(1);
+
+                if (IsWorkingDay(currentDate))
+                    remainingDays--;
+            }
+
+            return currentDate;
+        }
+
+        private DateTime SubtractWorkingDays(DateTime date, int days)
+        {
+            var currentDate = date;
+            var remainingDays = days;
+
+            while (remainingDays > 0)
+            {
+                currentDate = currentDate.AddDays(-1);
+
+                if (IsWorkingDay(currentDate))
+                    remainingDays--;
+            }
+
+            return currentDate;
+        }
+
         public async Task RecalculateTaskDatesAsync(int taskId)
         {
             await RecalculateTaskDatesInternalAsync(taskId, new HashSet<int>());
@@ -53,7 +91,6 @@ namespace PlannerAPI.Services.Implementations
                 switch (dependency.Type)
                 {
                     case "FS":
-                        // Le successeur commence quand le prédécesseur finit + offset
                         if (predecessor.EndDate.HasValue)
                         {
                             latestStartConstraint = MaxDate(
@@ -64,7 +101,6 @@ namespace PlannerAPI.Services.Implementations
                         break;
 
                     case "SS":
-                        // Le successeur commence quand le prédécesseur commence + offset
                         if (predecessor.StartDate.HasValue)
                         {
                             latestStartConstraint = MaxDate(
@@ -75,7 +111,6 @@ namespace PlannerAPI.Services.Implementations
                         break;
 
                     case "FF":
-                        // Le successeur finit quand le prédécesseur finit + offset
                         if (predecessor.EndDate.HasValue)
                         {
                             latestEndConstraint = MaxDate(
@@ -86,7 +121,6 @@ namespace PlannerAPI.Services.Implementations
                         break;
 
                     case "SF":
-                        // Le successeur finit quand le prédécesseur commence + offset
                         if (predecessor.StartDate.HasValue)
                         {
                             latestEndConstraint = MaxDate(
@@ -113,21 +147,19 @@ namespace PlannerAPI.Services.Implementations
             }
         }
 
-        private static void ApplySchedulingRules(
+        private void ApplySchedulingRules(
             PlannerTask task,
             DateTime? latestStartConstraint,
             DateTime? latestEndConstraint)
         {
-            // Sans durée, on ne peut pas recalculer proprement l'autre borne.
             if (!task.Duration.HasValue)
                 return;
 
             var duration = task.Duration.Value;
 
-            // Cas 1 : on a à la fois une contrainte de début et une contrainte de fin
             if (latestStartConstraint.HasValue && latestEndConstraint.HasValue)
             {
-                var expectedEnd = latestStartConstraint.Value.AddDays(duration);
+                var expectedEnd = AddWorkingDays(latestStartConstraint.Value, duration);
 
                 if (expectedEnd > latestEndConstraint.Value)
                 {
@@ -137,38 +169,32 @@ namespace PlannerAPI.Services.Implementations
                     );
                 }
 
-                // On fixe le début à la contrainte la plus tardive côté start
-                // puis on déduit la fin à partir de la durée.
                 task.StartDate = latestStartConstraint.Value;
-                task.EndDate = task.StartDate.Value.AddDays(duration);
+                task.EndDate = AddWorkingDays(task.StartDate.Value, duration);
                 return;
             }
 
-            // Cas 2 : contrainte de début uniquement
             if (latestStartConstraint.HasValue)
             {
                 task.StartDate = latestStartConstraint.Value;
-                task.EndDate = task.StartDate.Value.AddDays(duration);
+                task.EndDate = AddWorkingDays(task.StartDate.Value, duration);
                 return;
             }
 
-            // Cas 3 : contrainte de fin uniquement
             if (latestEndConstraint.HasValue)
             {
                 task.EndDate = latestEndConstraint.Value;
-                task.StartDate = task.EndDate.Value.AddDays(-duration);
+                task.StartDate = SubtractWorkingDays(task.EndDate.Value, duration);
                 return;
             }
 
-            // Cas 4 : aucune contrainte externe
-            // On complète les dates si possible à partir d'une borne déjà connue.
             if (task.StartDate.HasValue)
             {
-                task.EndDate = task.StartDate.Value.AddDays(duration);
+                task.EndDate = AddWorkingDays(task.StartDate.Value, duration);
             }
             else if (task.EndDate.HasValue)
             {
-                task.StartDate = task.EndDate.Value.AddDays(-duration);
+                task.StartDate = SubtractWorkingDays(task.EndDate.Value, duration);
             }
         }
 
@@ -177,6 +203,14 @@ namespace PlannerAPI.Services.Implementations
             return !current.HasValue || candidate > current.Value
                 ? candidate
                 : current.Value;
+        }
+
+        private DateTime? MinDate(DateTime? current, DateTime candidate)
+        {
+            if (!current.HasValue || candidate < current.Value)
+                return candidate;
+
+            return current;
         }
 
         public async Task CalculateCriticalPathAsync(int projectId)
@@ -221,7 +255,12 @@ namespace PlannerAPI.Services.Implementations
                 task.LateFinish = projectEndDate.Value;
 
                 if (task.Duration.HasValue)
-                    task.LateStart = task.LateFinish.Value.AddDays(-task.Duration.Value);
+                {
+                    task.LateStart = SubtractWorkingDays(
+                        task.LateFinish.Value,
+                        task.Duration.Value
+                    );
+                }
             }
 
             var orderedTasks = tasks
@@ -285,12 +324,18 @@ namespace PlannerAPI.Services.Implementations
                     if (candidateLateFinish.HasValue)
                     {
                         task.LateFinish = candidateLateFinish.Value;
-                        task.LateStart = task.LateFinish.Value.AddDays(-task.Duration.Value);
+                        task.LateStart = SubtractWorkingDays(
+                            task.LateFinish.Value,
+                            task.Duration.Value
+                        );
                     }
                     else if (candidateLateStart.HasValue)
                     {
                         task.LateStart = candidateLateStart.Value;
-                        task.LateFinish = task.LateStart.Value.AddDays(task.Duration.Value);
+                        task.LateFinish = AddWorkingDays(
+                            task.LateStart.Value,
+                            task.Duration.Value
+                        );
                     }
                 }
 
@@ -311,13 +356,6 @@ namespace PlannerAPI.Services.Implementations
             }
 
             await _context.SaveChangesAsync();
-        }
-        private DateTime? MinDate(DateTime? current, DateTime candidate)
-        {
-            if (!current.HasValue || candidate < current.Value)
-                return candidate;
-
-            return current;
         }
     }
 }

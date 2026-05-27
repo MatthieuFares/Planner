@@ -17,23 +17,13 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task<IEnumerable<ResourceGroupReadDto>> GetAllAsync()
         {
-            return await _context.ResourceGroups
+            var groups = await _context.ResourceGroups
                 .Include(g => g.Members)
                     .ThenInclude(m => m.Resource)
-                .Select(g => new ResourceGroupReadDto
-                {
-                    Id = g.Id,
-                    Name = g.Name,
-                    Description = g.Description,
-
-                    Members = g.Members.Select(m => new ResourceGroupMemberReadDto
-                    {
-                        ResourceId = m.ResourceId,
-                        ResourceName = m.Resource!.Name,
-                        ResourceType = m.Resource.Type
-                    }).ToList()
-                })
+                .OrderBy(g => g.Name)
                 .ToListAsync();
+
+            return groups.Select(MapToReadDto);
         }
 
         public async Task<ResourceGroupReadDto?> GetByIdAsync(int id)
@@ -46,19 +36,18 @@ namespace PlannerAPI.Services.Implementations
             if (group == null)
                 return null;
 
-            return new ResourceGroupReadDto
-            {
-                Id = group.Id,
-                Name = group.Name,
-                Description = group.Description,
+            return MapToReadDto(group);
+        }
 
-                Members = group.Members.Select(m => new ResourceGroupMemberReadDto
-                {
-                    ResourceId = m.ResourceId,
-                    ResourceName = m.Resource!.Name,
-                    ResourceType = m.Resource.Type
-                }).ToList()
-            };
+        public async Task<IEnumerable<ResourceGroupMemberReadDto>> GetMembersAsync(int groupId)
+        {
+            var members = await _context.ResourceGroupMembers
+                .Include(m => m.Resource)
+                .Where(m => m.ResourceGroupId == groupId)
+                .OrderBy(m => m.Resource!.Name)
+                .ToListAsync();
+
+            return members.Select(MapMemberToReadDto);
         }
 
         public async Task<ResourceGroupReadDto> CreateAsync(ResourceGroupCreateDto dto)
@@ -73,64 +62,7 @@ namespace PlannerAPI.Services.Implementations
 
             await _context.SaveChangesAsync();
 
-            return new ResourceGroupReadDto
-            {
-                Id = group.Id,
-                Name = group.Name,
-                Description = group.Description
-            };
-        }
-
-        public async Task<bool> AddMemberAsync(ResourceGroupMemberCreateDto dto)
-        {
-            var groupExists = await _context.ResourceGroups
-                .AnyAsync(g => g.Id == dto.ResourceGroupId);
-
-            if (!groupExists)
-                return false;
-
-            var resourceExists = await _context.Resources
-                .AnyAsync(r => r.Id == dto.ResourceId);
-
-            if (!resourceExists)
-                return false;
-
-            var alreadyExists = await _context.ResourceGroupMembers
-                .AnyAsync(m =>
-                    m.ResourceGroupId == dto.ResourceGroupId &&
-                    m.ResourceId == dto.ResourceId);
-
-            if (alreadyExists)
-                return false;
-
-            var member = new ResourceGroupMember
-            {
-                ResourceGroupId = dto.ResourceGroupId,
-                ResourceId = dto.ResourceId
-            };
-
-            _context.ResourceGroupMembers.Add(member);
-
-            await _context.SaveChangesAsync();
-
-            return true;
-        }
-
-        public async Task<bool> RemoveMemberAsync(int groupId, int resourceId)
-        {
-            var member = await _context.ResourceGroupMembers
-                .FirstOrDefaultAsync(m =>
-                    m.ResourceGroupId == groupId &&
-                    m.ResourceId == resourceId);
-
-            if (member == null)
-                return false;
-
-            _context.ResourceGroupMembers.Remove(member);
-
-            await _context.SaveChangesAsync();
-
-            return true;
+            return MapToReadDto(group);
         }
 
         public async Task<bool> UpdateAsync(int id, ResourceGroupUpdateDto dto)
@@ -157,11 +89,100 @@ namespace PlannerAPI.Services.Implementations
             if (group == null)
                 return false;
 
+            if (group.Members.Any())
+            {
+                throw new InvalidOperationException(
+                    "Impossible de supprimer ce groupe : retire d’abord ses membres."
+                );
+            }
+
             _context.ResourceGroups.Remove(group);
 
             await _context.SaveChangesAsync();
 
             return true;
+        }
+
+        public async Task<bool> AddMemberAsync(ResourceGroupMemberCreateDto dto)
+        {
+            var groupExists = await _context.ResourceGroups
+                .AnyAsync(g => g.Id == dto.ResourceGroupId);
+
+            if (!groupExists)
+                return false;
+
+            var resourceExists = await _context.Resources
+                .AnyAsync(r => r.Id == dto.ResourceId);
+
+            if (!resourceExists)
+                return false;
+
+            var alreadyExists = await _context.ResourceGroupMembers
+                .AnyAsync(m =>
+                    m.ResourceGroupId == dto.ResourceGroupId &&
+                    m.ResourceId == dto.ResourceId
+                );
+
+            if (alreadyExists)
+                return false;
+
+            var member = new ResourceGroupMember
+            {
+                ResourceGroupId = dto.ResourceGroupId,
+                ResourceId = dto.ResourceId
+            };
+
+            _context.ResourceGroupMembers.Add(member);
+
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
+
+        public async Task<bool> RemoveMemberAsync(int groupId, int resourceId)
+        {
+            var member = await _context.ResourceGroupMembers
+                .FirstOrDefaultAsync(m =>
+                    m.ResourceGroupId == groupId &&
+                    m.ResourceId == resourceId
+                );
+
+            if (member == null)
+                return false;
+
+            _context.ResourceGroupMembers.Remove(member);
+
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
+
+        private static ResourceGroupReadDto MapToReadDto(ResourceGroup group)
+        {
+            return new ResourceGroupReadDto
+            {
+                Id = group.Id,
+                Name = group.Name,
+                Description = group.Description,
+                Members = group.Members
+                    .Where(m => m.Resource != null)
+                    .Select(MapMemberToReadDto)
+                    .ToList()
+            };
+        }
+
+        private static ResourceGroupMemberReadDto MapMemberToReadDto(ResourceGroupMember member)
+        {
+            return new ResourceGroupMemberReadDto
+            {
+                Id = member.Id,
+                ResourceGroupId = member.ResourceGroupId,
+                ResourceId = member.ResourceId,
+                ResourceName = member.Resource?.Name ?? string.Empty,
+                ResourceType = member.Resource?.Type ?? string.Empty,
+                CapacityHoursPerWeek = member.Resource?.CapacityHoursPerWeek ?? 0,
+                CostPerHour = member.Resource?.CostPerHour ?? 0
+            };
         }
     }
 }

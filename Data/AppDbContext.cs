@@ -61,6 +61,12 @@ namespace PlannerAPI.Data
                 .HasForeignKey(ra => ra.ResourceId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            modelBuilder.Entity<ResourceAssignment>()
+                .HasOne(ra => ra.ResourceGroup)
+                .WithMany()
+                .HasForeignKey(ra => ra.ResourceGroupId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             modelBuilder.Entity<ResourceGroupMember>()
                 .HasOne(rgm => rgm.ResourceGroup)
                 .WithMany(rg => rg.Members)

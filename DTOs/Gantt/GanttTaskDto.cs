@@ -32,14 +32,21 @@ namespace PlannerAPI.DTOs.Gantt
         public string Type { get; set; } = string.Empty;
         public int OffsetDays { get; set; }
     }
-        public class GanttResourceAssignmentDto
-    {
-        public int AssignmentId { get; set; }
-        public int ResourceId { get; set; }
-        public string ResourceName { get; set; } = string.Empty;
-        public string ResourceType { get; set; } = string.Empty;
-        public decimal WorkloadHours { get; set; }
-        public decimal? AllocationPercent { get; set; }
-        public int ProgressPercent { get; set; }
-    }
+public class GanttResourceAssignmentDto
+{
+    public int AssignmentId { get; set; }
+
+    public int? ResourceId { get; set; }
+    public string? ResourceName { get; set; }
+    public string? ResourceType { get; set; }
+
+    public int? ResourceGroupId { get; set; }
+    public string? ResourceGroupName { get; set; }
+
+    public decimal WorkloadHours { get; set; }
+
+    public int AllocationPercent { get; set; }
+
+    public int ProgressPercent { get; set; }
+}
 }

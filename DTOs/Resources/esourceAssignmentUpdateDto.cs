@@ -4,10 +4,12 @@ namespace PlannerAPI.DTOs.Resources
     {
         public int TaskId { get; set; }
 
-        public int ResourceId { get; set; }
+        public int? ResourceId { get; set; }
+
+        public int? ResourceGroupId { get; set; }
 
         public decimal WorkloadHours { get; set; }
 
-        public decimal? AllocationPercent { get; set; }
+        public int AllocationPercent { get; set; }
     }
 }

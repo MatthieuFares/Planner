@@ -8,49 +8,74 @@ namespace PlannerAPI.Controllers
     [Route("api/[controller]")]
     public class ResourceAssignmentsController : ControllerBase
     {
-        private readonly IResourceAssignmentService _assignmentService;
+        private readonly IResourceAssignmentService _service;
 
-        public ResourceAssignmentsController(IResourceAssignmentService assignmentService)
+        public ResourceAssignmentsController(IResourceAssignmentService service)
         {
-            _assignmentService = assignmentService;
+            _service = service;
         }
 
         [HttpPost]
         public async Task<ActionResult<ResourceAssignmentReadDto>> Create(ResourceAssignmentCreateDto dto)
         {
-            var result = await _assignmentService.CreateAsync(dto);
+            try
+            {
+                var assignment = await _service.CreateAsync(dto);
 
-            return Ok(result);
+                return CreatedAtAction(
+                    nameof(GetByTaskId),
+                    new { taskId = assignment.TaskId },
+                    assignment
+                );
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpGet("task/{taskId}")]
-        public async Task<ActionResult<IEnumerable<ResourceAssignmentReadDto>>> GetByTask(int taskId)
+        public async Task<ActionResult<IEnumerable<ResourceAssignmentReadDto>>> GetByTaskId(int taskId)
         {
-            var result = await _assignmentService.GetByTaskIdAsync(taskId);
+            try
+            {
+                var assignments = await _service.GetByTaskIdAsync(taskId);
 
-            return Ok(result);
+                return Ok(assignments);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, ResourceAssignmentUpdateDto dto)
         {
-            var updated = await _assignmentService.UpdateAsync(id, dto);
+            try
+            {
+                var updated = await _service.UpdateAsync(id, dto);
 
-            if (!updated)
-                return NotFound();
+                if (!updated)
+                    return NotFound($"Assignation avec l'id {id} introuvable.");
 
-            return NoContent();
+                return Ok("Assignation modifiée avec succès.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var deleted = await _assignmentService.DeleteAsync(id);
+            var deleted = await _service.DeleteAsync(id);
 
             if (!deleted)
-                return NotFound();
+                return NotFound($"Assignation avec l'id {id} introuvable.");
 
-            return NoContent();
+            return Ok("Assignation supprimée avec succès.");
         }
     }
 }

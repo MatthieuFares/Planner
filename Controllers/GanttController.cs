@@ -28,7 +28,9 @@ namespace PlannerAPI.Controllers
                 .Where(t => t.ProjectId == projectId)
                 .Include(t => t.Predecessors)
                 .Include(t => t.ResourceAssignments)
-                .ThenInclude(ra => ra.Resource)
+                    .ThenInclude(ra => ra.Resource)
+                .Include(t => t.ResourceAssignments)
+                    .ThenInclude(ra => ra.ResourceGroup)
                 .OrderBy(t => t.StartDate)
                 .Select(t => new GanttTaskDto
                 {
@@ -47,23 +49,41 @@ namespace PlannerAPI.Controllers
                     LateStart = t.LateStart,
                     LateFinish = t.LateFinish,
                     TotalFloat = t.TotalFloat,
-                    ResourceAssignments = t.ResourceAssignments.Select(ra => new GanttResourceAssignmentDto
-                    {
-                        AssignmentId = ra.Id,
-                        ResourceId = ra.ResourceId,
-                        ResourceName = ra.Resource!.Name,
-                        ResourceType = ra.Resource.Type,
-                        WorkloadHours = ra.WorkloadHours,
-                        AllocationPercent = ra.AllocationPercent
-                    }).ToList(),
-                    Dependencies = t.Predecessors.Select(d => new GanttDependencyDto
-                    {
-                        Id = d.Id,
-                        PredecessorId = d.PredecessorId,
-                        SuccessorId = d.SuccessorId,
-                        Type = d.Type.ToString(),
-                        OffsetDays = d.OffsetDays
-                    }).ToList()
+
+                    ResourceAssignments = t.ResourceAssignments
+                        .Select(ra => new GanttResourceAssignmentDto
+                        {
+                            AssignmentId = ra.Id,
+
+                            ResourceId = ra.ResourceId,
+                            ResourceName = ra.Resource != null
+                                ? ra.Resource.Name
+                                : null,
+                            ResourceType = ra.Resource != null
+                                ? ra.Resource.Type
+                                : null,
+
+                            ResourceGroupId = ra.ResourceGroupId,
+                            ResourceGroupName = ra.ResourceGroup != null
+                                ? ra.ResourceGroup.Name
+                                : null,
+
+                            WorkloadHours = ra.WorkloadHours,
+                            AllocationPercent = ra.AllocationPercent,
+                            ProgressPercent = 0
+                        })
+                        .ToList(),
+
+                    Dependencies = t.Predecessors
+                        .Select(d => new GanttDependencyDto
+                        {
+                            Id = d.Id,
+                            PredecessorId = d.PredecessorId,
+                            SuccessorId = d.SuccessorId,
+                            Type = d.Type.ToString(),
+                            OffsetDays = d.OffsetDays
+                        })
+                        .ToList()
                 })
                 .ToListAsync();
 

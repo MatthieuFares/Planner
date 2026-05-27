@@ -7,10 +7,14 @@ namespace PlannerAPI.Models
         public int TaskId { get; set; }
         public PlannerTask? Task { get; set; }
 
-        public int ResourceId { get; set; }
+        public int? ResourceId { get; set; }
         public Resource? Resource { get; set; }
 
+        public int? ResourceGroupId { get; set; }
+        public ResourceGroup? ResourceGroup { get; set; }
+
         public decimal WorkloadHours { get; set; }
-        public decimal? AllocationPercent { get; set; }
+
+        public int AllocationPercent { get; set; }
     }
 }
