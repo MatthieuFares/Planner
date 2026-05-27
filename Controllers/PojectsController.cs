@@ -4,6 +4,7 @@ using PlannerAPI.Data;
 using PlannerAPI.DTOs.Projects;
 using PlannerAPI.DTOs.Tasks;
 using PlannerAPI.Models;
+using PlannerAPI.Services.Interfaces;
 
 namespace PlannerAPI.Controllers
 {
@@ -12,10 +13,12 @@ namespace PlannerAPI.Controllers
     public class ProjectsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly ITaskService _taskService;
 
-        public ProjectsController(AppDbContext context)
+        public ProjectsController(AppDbContext context, ITaskService taskService)
         {
             _context = context;
+            _taskService = taskService;
         }
 
         [HttpGet]
@@ -59,21 +62,8 @@ namespace PlannerAPI.Controllers
             if (!projectExists)
                 return NotFound($"Projet avec l'id {id} introuvable.");
 
-            var tasks = await _context.Tasks
-                .Where(t => t.ProjectId == id)
-                .Select(t => new TaskReadDto
-                {
-                    Id = t.Id,
-                    Title = t.Title,
-                    Description = t.Description,
-                    IsDone = t.IsDone,
-                    ProjectId = t.ProjectId,
-                    StartDate = t.StartDate,
-                    EndDate = t.EndDate,
-                    Duration = t.Duration
-                })
-                .ToListAsync();
-                
+            var tasks = await _taskService.GetByProjectIdAsync(id);
+
             return Ok(tasks);
         }
 

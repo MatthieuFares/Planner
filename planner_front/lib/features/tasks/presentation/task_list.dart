@@ -204,9 +204,34 @@ class _TaskListState extends State<TaskList> {
 
                   return Card(
                     child: ListTile(
-                      title: Text(task.title),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              task.title,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: task.isDone ? Colors.green.shade700 : null,
+                                decoration: task.isDone ? TextDecoration.lineThrough : null,
+                              ),
+                            ),
+                          ),
+                          if (task.isDone)
+                            const Padding(
+                              padding: EdgeInsets.only(left: 8),
+                              child: Chip(
+                                label: Text('Terminée'),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                        ],
+                      ),
                       subtitle: Text(
-                        'Début : ${formatDate(task.startDate)} | Fin : ${formatDate(task.endDate)} | Durée : ${task.duration ?? '-'}j',
+                        'Début : ${formatDate(task.startDate)} | '
+                        'Fin : ${formatDate(task.endDate)} | '
+                        'Durée : ${task.duration ?? '-'}j | '
+                        'Progression : ${task.progressPercent}%',
                       ),
                       trailing: SizedBox(
                         width: 240,

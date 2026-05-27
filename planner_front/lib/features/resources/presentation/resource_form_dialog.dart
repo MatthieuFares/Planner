@@ -18,9 +18,16 @@ class _ResourceFormDialogState extends State<ResourceFormDialog> {
   final _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _nameController;
-  late final TextEditingController _typeController;
   late final TextEditingController _capacityController;
   late final TextEditingController _costController;
+
+  final List<String> _resourceTypes = [
+    'Person',
+    'Team',
+    'Material',
+  ];
+
+  String _selectedType = 'Person';
 
   bool get _isEditMode => widget.resource != null;
 
@@ -32,10 +39,6 @@ class _ResourceFormDialogState extends State<ResourceFormDialog> {
       text: widget.resource?.name ?? '',
     );
 
-    _typeController = TextEditingController(
-      text: widget.resource?.type ?? 'Person',
-    );
-
     _capacityController = TextEditingController(
       text: widget.resource?.capacityHoursPerWeek.toString() ?? '35',
     );
@@ -43,12 +46,21 @@ class _ResourceFormDialogState extends State<ResourceFormDialog> {
     _costController = TextEditingController(
       text: widget.resource?.costPerHour.toString() ?? '0',
     );
+
+    final existingType = widget.resource?.type;
+
+    if (existingType != null &&
+        existingType.isNotEmpty &&
+        _resourceTypes.contains(existingType)) {
+      _selectedType = existingType;
+    } else {
+      _selectedType = 'Person';
+    }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _typeController.dispose();
     _capacityController.dispose();
     _costController.dispose();
     super.dispose();
@@ -58,7 +70,7 @@ class _ResourceFormDialogState extends State<ResourceFormDialog> {
     if (!_formKey.currentState!.validate()) return;
 
     final name = _nameController.text.trim();
-    final type = _typeController.text.trim();
+    final type = _selectedType;
     final capacity = int.parse(_capacityController.text);
     final cost = double.parse(_costController.text.replaceAll(',', '.'));
 
@@ -91,81 +103,88 @@ class _ResourceFormDialogState extends State<ResourceFormDialog> {
         width: 520,
         child: Form(
           key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nom',
-                  border: OutlineInputBorder(),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nom',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Le nom est obligatoire.';
+                    }
+
+                    return null;
+                  },
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Le nom est obligatoire.';
-                  }
+                const SizedBox(height: 12),
 
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _selectedType,
+                  decoration: const InputDecoration(
+                    labelText: 'Type',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _resourceTypes.map((type) {
+                    return DropdownMenuItem<String>(
+                      value: type,
+                      child: Text(type),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
 
-              TextFormField(
-                controller: _typeController,
-                decoration: const InputDecoration(
-                  labelText: 'Type',
-                  helperText: 'Exemples : Person, Team, Material',
-                  border: OutlineInputBorder(),
+                    setState(() {
+                      _selectedType = value;
+                    });
+                  },
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Le type est obligatoire.';
-                  }
+                const SizedBox(height: 12),
 
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
+                TextFormField(
+                  controller: _capacityController,
+                  decoration: const InputDecoration(
+                    labelText: 'Capacité heures / semaine',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    final capacity = int.tryParse(value ?? '');
 
-              TextFormField(
-                controller: _capacityController,
-                decoration: const InputDecoration(
-                  labelText: 'Capacité heures / semaine',
-                  border: OutlineInputBorder(),
+                    if (capacity == null || capacity < 0) {
+                      return 'La capacité doit être un nombre positif.';
+                    }
+
+                    return null;
+                  },
                 ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  final capacity = int.tryParse(value ?? '');
+                const SizedBox(height: 12),
 
-                  if (capacity == null || capacity < 0) {
-                    return 'La capacité doit être un nombre positif.';
-                  }
+                TextFormField(
+                  controller: _costController,
+                  decoration: const InputDecoration(
+                    labelText: 'Coût horaire',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    final cost = double.tryParse(
+                      (value ?? '').replaceAll(',', '.'),
+                    );
 
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
+                    if (cost == null || cost < 0) {
+                      return 'Le coût horaire doit être un nombre positif.';
+                    }
 
-              TextFormField(
-                controller: _costController,
-                decoration: const InputDecoration(
-                  labelText: 'Coût horaire',
-                  border: OutlineInputBorder(),
+                    return null;
+                  },
                 ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  final cost = double.tryParse(
-                    (value ?? '').replaceAll(',', '.'),
-                  );
-
-                  if (cost == null || cost < 0) {
-                    return 'Le coût horaire doit être un nombre positif.';
-                  }
-
-                  return null;
-                },
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

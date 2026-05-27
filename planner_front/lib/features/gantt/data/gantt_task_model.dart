@@ -8,7 +8,7 @@ class GanttTask {
 
   final bool isDone;
   final bool isCritical;
-
+final int progressPercent;
   final int? totalFloat;
 
   final List<GanttResourceAssignment> resourceAssignments;
@@ -21,8 +21,10 @@ class GanttTask {
     required this.duration,
     required this.isDone,
     required this.isCritical,
+    required this.progressPercent,
     this.totalFloat,
     this.resourceAssignments = const [],
+    
   });
 
   factory GanttTask.fromJson(Map<String, dynamic> json) {
@@ -46,6 +48,9 @@ class GanttTask {
               )
               .toList()
           : [],
+      progressPercent: json['progressPercent'] != null
+          ? (json['progressPercent'] as num).toInt()
+          : 0,
     );
   }
 

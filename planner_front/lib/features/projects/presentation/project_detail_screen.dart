@@ -62,22 +62,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Widget _buildSelectedTab() {
     switch (_selectedTabIndex) {
       case 0:
-        return TaskList(projectId: widget.projectId);
-
-      case 1:
         return _DashboardTab(
           insightsFuture: _insightsFuture,
         );
 
+      case 1:
+        return TaskList(projectId: widget.projectId);
+
       case 2:
         return DependenciesTab(projectId: widget.projectId);
+
       case 3:
         return ResourcesTab(projectId: widget.projectId);
+
       case 4:
         return GanttView(projectId: widget.projectId);
 
       default:
-        return TaskList(projectId: widget.projectId);
+        return _DashboardTab(
+          insightsFuture: _insightsFuture,
+        );
     }
   }
 
@@ -108,20 +112,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             },
             destinations: const [
               NavigationDestination(
-                icon: Icon(Icons.checklist),
-                label: 'Tâches',
-              ),
-              NavigationDestination(
                 icon: Icon(Icons.dashboard_outlined),
                 label: 'Dashboard',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.checklist),
+                label: 'Tâches',
               ),
               NavigationDestination(
                 icon: Icon(Icons.account_tree_outlined),
                 label: 'Dépendances',
               ),
               NavigationDestination(
-              icon: Icon(Icons.groups_outlined),
-              label: 'Ressources',
+                icon: Icon(Icons.groups_outlined),
+                label: 'Ressources',
               ),
               NavigationDestination(
                 icon: Icon(Icons.timeline),

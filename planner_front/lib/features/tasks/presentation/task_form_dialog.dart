@@ -21,99 +21,69 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
   final _descriptionController = TextEditingController();
   final _durationController = TextEditingController(text: '1');
 
-  DateTime? _startDate;
-  DateTime? _endDate;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _durationController.addListener(_recalculateEndDate);
-  }
+  DateTime _startDate = DateTime.now();
+  double _progressPercent = 0;
 
   @override
   void dispose() {
-    _durationController.removeListener(_recalculateEndDate);
     _titleController.dispose();
     _descriptionController.dispose();
     _durationController.dispose();
     super.dispose();
   }
 
-  void _recalculateEndDate() {
-    if (_startDate == null) return;
-
-    final duration = int.tryParse(_durationController.text);
-
-    if (duration == null || duration <= 0) return;
-
-    setState(() {
-      _endDate = _startDate!.add(Duration(days: duration));
-    });
+  DateTime _computeEndDate(DateTime startDate, int duration) {
+    return startDate.add(Duration(days: duration));
   }
 
   Future<void> _pickStartDate() async {
-    final selectedDate = await showDatePicker(
+    final pickedDate = await showDatePicker(
       context: context,
-      initialDate: _startDate ?? DateTime.now(),
+      initialDate: _startDate,
       firstDate: DateTime(2020),
       lastDate: DateTime(2035),
     );
 
-    if (selectedDate != null) {
-      setState(() {
-        _startDate = selectedDate;
-      });
+    if (pickedDate == null) return;
 
-      _recalculateEndDate();
-    }
+    setState(() {
+      _startDate = pickedDate;
+    });
   }
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_startDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Merci de sélectionner une date de début.'),
-        ),
-      );
-      return;
-    }
-
+    final title = _titleController.text.trim();
+    final description = _descriptionController.text.trim();
     final duration = int.parse(_durationController.text);
-    final calculatedEndDate = _startDate!.add(Duration(days: duration));
+
+    final endDate = _computeEndDate(_startDate, duration);
+    final progress = _progressPercent.round();
 
     final request = TaskCreateRequest(
-      title: _titleController.text.trim(),
-      description: _descriptionController.text.trim().isEmpty
-          ? null
-          : _descriptionController.text.trim(),
+      title: title,
+      description: description.isEmpty ? null : description,
       projectId: widget.projectId,
-      startDate: _startDate!,
-      endDate: calculatedEndDate,
+      startDate: _startDate,
+      endDate: endDate,
       duration: duration,
+      isDone: progress >= 100,
+      progressPercent: progress,
     );
 
     Navigator.of(context).pop(request);
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Non calculée';
-
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    final year = date.year.toString();
-
-    return '$day/$month/$year';
-  }
-
   @override
   Widget build(BuildContext context) {
+    final duration = int.tryParse(_durationController.text) ?? 1;
+    final endDate = _computeEndDate(_startDate, duration);
+
     return AlertDialog(
       title: const Text('Nouvelle tâche'),
       content: SizedBox(
-        width: 520,
+        width: 560,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -153,11 +123,14 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
                     border: OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.number,
+                  onChanged: (_) {
+                    setState(() {});
+                  },
                   validator: (value) {
                     final duration = int.tryParse(value ?? '');
 
                     if (duration == null || duration <= 0) {
-                      return 'La durée doit être un nombre supérieur à 0.';
+                      return 'La durée doit être supérieure à 0.';
                     }
 
                     return null;
@@ -168,27 +141,57 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
                 Row(
                   children: [
                     Expanded(
-                      child: OutlinedButton(
+                      child: OutlinedButton.icon(
                         onPressed: _pickStartDate,
-                        child: Text('Début : ${_formatDate(_startDate)}'),
+                        icon: const Icon(Icons.calendar_month),
+                        label: Text(
+                          'Début : ${_startDate.day.toString().padLeft(2, '0')}/'
+                          '${_startDate.month.toString().padLeft(2, '0')}/'
+                          '${_startDate.year}',
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
 
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                Align(
+                  alignment: Alignment.centerLeft,
                   child: Text(
-                    'Fin calculée : ${_formatDate(_endDate)}',
+                    'Fin calculée : ${endDate.day.toString().padLeft(2, '0')}/'
+                    '${endDate.month.toString().padLeft(2, '0')}/'
+                    '${endDate.year}',
                     style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Progression : ${_progressPercent.round()}%',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                Slider(
+                  value: _progressPercent,
+                  min: 0,
+                  max: 100,
+                  divisions: 20,
+                  label: '${_progressPercent.round()}%',
+                  onChanged: (value) {
+                    setState(() {
+                      _progressPercent = value;
+                    });
+                  },
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _progressPercent >= 100
+                        ? 'La tâche sera marquée comme terminée.'
+                        : 'La tâche sera marquée comme en cours.',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
               ],

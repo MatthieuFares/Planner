@@ -535,6 +535,8 @@ class _GanttBarRow extends StatelessWidget {
             child: Tooltip(
               message:
                   '${task.title}\n'
+                  'Statut : ${task.isDone ? 'Terminée' : 'En cours'}\n'
+                  'Progression : ${task.progressPercent}%\n'
                   'Durée : ${task.duration}j\n'
                   'Float : ${task.totalFloat ?? '-'}\n'
                   '${task.assignmentTooltip}',
@@ -551,7 +553,7 @@ class _GanttBarRow extends StatelessWidget {
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  '${task.duration}j',
+                  task.isDone ? 'OK' : '${task.progressPercent}%',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,

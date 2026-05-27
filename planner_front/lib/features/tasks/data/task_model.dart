@@ -12,6 +12,7 @@ class PlannerTask {
   final int? assignedResourcesCount;
   final bool? isCritical;
   final int? floatValue;
+  final int progressPercent;
 
   PlannerTask({
     required this.id,
@@ -27,6 +28,7 @@ class PlannerTask {
     this.assignedResourcesCount,
     this.isCritical,
     this.floatValue,
+    this.progressPercent = 0,
   });
 
   factory PlannerTask.fromJson(Map<String, dynamic> json) {
@@ -49,7 +51,8 @@ class PlannerTask {
       actualDuration: json['actualDuration'],
       assignedResourcesCount: json['assignedResourcesCount'],
       isCritical: json['isCritical'],
-      floatValue: json['float'] ?? json['floatValue'],
+      floatValue: json['totalFloat'] ?? json['float'] ?? json['floatValue'],
+      progressPercent: json['progressPercent'] ?? 0,
     );
   }
 }
@@ -62,6 +65,7 @@ class TaskCreateRequest {
   final DateTime endDate;
   final int duration;
   final bool isDone;
+  final int progressPercent;
 
   TaskCreateRequest({
     required this.title,
@@ -71,6 +75,7 @@ class TaskCreateRequest {
     required this.endDate,
     required this.duration,
     this.isDone = false,
+    this.progressPercent = 0,
   });
 
   Map<String, dynamic> toJson() {
@@ -82,6 +87,7 @@ class TaskCreateRequest {
       'endDate': endDate.toIso8601String(),
       'duration': duration,
       'isDone': isDone,
+      'progressPercent': progressPercent,
     };
   }
 }
@@ -94,7 +100,7 @@ class TaskUpdateRequest {
   final DateTime endDate;
   final int duration;
   final bool isDone;
-
+  final int progressPercent;
   TaskUpdateRequest({
     required this.title,
     this.description,
@@ -103,6 +109,7 @@ class TaskUpdateRequest {
     required this.endDate,
     required this.duration,
     required this.isDone,
+    this.progressPercent = 0,
   });
 
   Map<String, dynamic> toJson() {
@@ -114,6 +121,7 @@ class TaskUpdateRequest {
       'endDate': endDate.toIso8601String(),
       'duration': duration,
       'isDone': isDone,
+      'progressPercent': progressPercent,
     };
   }
 }

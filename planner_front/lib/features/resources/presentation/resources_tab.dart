@@ -191,15 +191,15 @@ class _ResourcesTabState extends State<ResourcesTab> {
       length: 3,
       child: Column(
         children: [
-         const TabBar(
+          const TabBar(
             tabs: [
-              Tab(
-                icon: Icon(Icons.groups_outlined),
-                text: 'Ressources',
-              ),
               Tab(
                 icon: Icon(Icons.assignment_ind_outlined),
                 text: 'Assignations',
+              ),
+              Tab(
+                icon: Icon(Icons.groups_outlined),
+                text: 'Ressources',
               ),
               Tab(
                 icon: Icon(Icons.group_work_outlined),
@@ -210,8 +210,8 @@ class _ResourcesTabState extends State<ResourcesTab> {
           Expanded(
             child: TabBarView(
               children: [
-                _buildResourcesList(),
                 ResourceAssignmentsTab(projectId: widget.projectId),
+                _buildResourcesList(),
                 const ResourceGroupsTab(),
               ],
             ),
