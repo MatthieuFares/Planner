@@ -16,6 +16,7 @@ namespace PlannerAPI.Data
         public DbSet<ResourceAssignment> ResourceAssignments { get; set; }
         public DbSet<ResourceGroup> ResourceGroups { get; set; }
         public DbSet<ResourceGroupMember> ResourceGroupMembers { get; set; }
+        public DbSet<PlanningItem> PlanningItems { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -23,7 +24,7 @@ namespace PlannerAPI.Data
 
             modelBuilder.Entity<PlannerTask>().ToTable("PlannerTasks");
 
-            // Project -> PlannerTasks (cascade delete OK)
+            // Project -> PlannerTasks
             modelBuilder.Entity<PlannerTask>()
                 .HasOne(t => t.Project)
                 .WithMany(p => p.Tasks)
@@ -44,7 +45,7 @@ namespace PlannerAPI.Data
                 .HasForeignKey(td => td.PredecessorId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // éviter doublons DB
+            // Éviter les doublons DB
             modelBuilder.Entity<TaskDependency>()
                 .HasIndex(td => new { td.PredecessorId, td.SuccessorId, td.Type })
                 .IsUnique();
@@ -82,6 +83,37 @@ namespace PlannerAPI.Data
             modelBuilder.Entity<ResourceGroupMember>()
                 .HasIndex(rgm => new { rgm.ResourceGroupId, rgm.ResourceId })
                 .IsUnique();
+
+            // Project -> PlanningItems
+            modelBuilder.Entity<PlanningItem>()
+                .HasOne(pi => pi.Project)
+                .WithMany()
+                .HasForeignKey(pi => pi.ProjectId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // PlanningItem -> Children
+            modelBuilder.Entity<PlanningItem>()
+                .HasOne(pi => pi.Parent)
+                .WithMany(pi => pi.Children)
+                .HasForeignKey(pi => pi.ParentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // PlanningItem -> PlannerTask
+            modelBuilder.Entity<PlanningItem>()
+                .HasOne(pi => pi.Task)
+                .WithMany()
+                .HasForeignKey(pi => pi.TaskId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Ordre stable dans la structure du projet
+            modelBuilder.Entity<PlanningItem>()
+                .HasIndex(pi => new { pi.ProjectId, pi.ParentId, pi.SortOrder });
+
+            // Une tâche ne peut être liée qu'à une seule ligne de planning
+            modelBuilder.Entity<PlanningItem>()
+                .HasIndex(pi => pi.TaskId)
+                .IsUnique()
+                .HasFilter("[TaskId] IS NOT NULL");
         }
     }
 }
