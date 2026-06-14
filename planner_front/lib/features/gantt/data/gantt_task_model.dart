@@ -8,7 +8,7 @@ class GanttTask {
 
   final bool isDone;
   final bool isCritical;
-final int progressPercent;
+  final int progressPercent;
   final int? totalFloat;
 
   final List<GanttResourceAssignment> resourceAssignments;
@@ -38,6 +38,7 @@ final int progressPercent;
       duration: json['duration'] ?? 0,
       isDone: json['isDone'] ?? false,
       isCritical: json['isCritical'] ?? false,
+      progressPercent: json['progressPercent'] ?? 0,
       totalFloat: json['totalFloat'],
       resourceAssignments: assignmentsJson is List
           ? assignmentsJson
@@ -48,9 +49,6 @@ final int progressPercent;
               )
               .toList()
           : [],
-      progressPercent: json['progressPercent'] != null
-          ? (json['progressPercent'] as num).toInt()
-          : 0,
     );
   }
 

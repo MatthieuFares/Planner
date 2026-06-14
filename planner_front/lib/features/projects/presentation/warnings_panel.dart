@@ -10,22 +10,35 @@ class WarningsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasWarnings = warnings.isNotEmpty;
+
     return Card(
-      color: warnings.isEmpty
-          ? null
-          : Theme.of(context).colorScheme.errorContainer,
+      color: hasWarnings ? Theme.of(context).colorScheme.errorContainer : null,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Warnings',
-              style: Theme.of(context).textTheme.titleMedium,
+            Row(
+              children: [
+                Icon(
+                  hasWarnings
+                      ? Icons.warning_amber_rounded
+                      : Icons.check_circle_outline,
+                  color: hasWarnings
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Alertes',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
             ),
             const SizedBox(height: 12),
-            if (warnings.isEmpty)
-              const Text('Aucun warning détecté.')
+            if (!hasWarnings)
+              const Text('Aucune alerte détectée.')
             else
               Column(
                 children: warnings.map((warning) {
@@ -34,7 +47,10 @@ class WarningsPanel extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.warning_amber_rounded),
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(_formatWarning(warning)),

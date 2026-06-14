@@ -52,25 +52,39 @@ namespace PlannerAPI.Controllers
         [HttpPut("{id}")]
         public async Task<ActionResult<TaskReadDto>> UpdateTask(int id, TaskUpdateDto dto)
         {
-            var result = await _taskService.UpdateTaskAsync(id, dto);
+            try
+            {
+                var result = await _taskService.UpdateTaskAsync(id, dto);
 
-            if (result == null)
-                return NotFound(
-                    $"Tâche avec l'id {id} introuvable ou projet avec l'id {dto.ProjectId} introuvable."
-                );
+                if (result == null)
+                    return NotFound(
+                        $"Tâche avec l'id {id} introuvable ou projet avec l'id {dto.ProjectId} introuvable."
+                    );
 
-            return Ok(result);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteTask(int id)
         {
-            var deleted = await _taskService.DeleteTaskAsync(id);
+            try
+            {
+                var deleted = await _taskService.DeleteTaskAsync(id);
 
-            if (!deleted)
-                return NotFound($"Tâche avec l'id {id} introuvable.");
+                if (!deleted)
+                    return NotFound($"Tâche avec l'id {id} introuvable.");
 
-            return Ok("Tâche supprimée avec succès.");
+                return Ok("Tâche supprimée avec succès.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }

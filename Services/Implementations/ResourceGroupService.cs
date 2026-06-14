@@ -39,8 +39,14 @@ namespace PlannerAPI.Services.Implementations
             return MapToReadDto(group);
         }
 
-        public async Task<IEnumerable<ResourceGroupMemberReadDto>> GetMembersAsync(int groupId)
+        public async Task<IEnumerable<ResourceGroupMemberReadDto>?> GetMembersAsync(int groupId)
         {
+            var groupExists = await _context.ResourceGroups
+                .AnyAsync(g => g.Id == groupId);
+
+            if (!groupExists)
+                return null;
+
             var members = await _context.ResourceGroupMembers
                 .Include(m => m.Resource)
                 .Where(m => m.ResourceGroupId == groupId)
@@ -54,8 +60,8 @@ namespace PlannerAPI.Services.Implementations
         {
             var group = new ResourceGroup
             {
-                Name = dto.Name,
-                Description = dto.Description
+                Name = NormalizeRequiredText(dto.Name, "Le nom du groupe est obligatoire."),
+                Description = NormalizeOptionalText(dto.Description)
             };
 
             _context.ResourceGroups.Add(group);
@@ -65,19 +71,22 @@ namespace PlannerAPI.Services.Implementations
             return MapToReadDto(group);
         }
 
-        public async Task<bool> UpdateAsync(int id, ResourceGroupUpdateDto dto)
+        public async Task<ResourceGroupReadDto?> UpdateAsync(int id, ResourceGroupUpdateDto dto)
         {
-            var group = await _context.ResourceGroups.FindAsync(id);
+            var group = await _context.ResourceGroups
+                .Include(g => g.Members)
+                    .ThenInclude(m => m.Resource)
+                .FirstOrDefaultAsync(g => g.Id == id);
 
             if (group == null)
-                return false;
+                return null;
 
-            group.Name = dto.Name;
-            group.Description = dto.Description;
+            group.Name = NormalizeRequiredText(dto.Name, "Le nom du groupe est obligatoire.");
+            group.Description = NormalizeOptionalText(dto.Description);
 
             await _context.SaveChangesAsync();
 
-            return true;
+            return MapToReadDto(group);
         }
 
         public async Task<bool> DeleteAsync(int id)
@@ -96,6 +105,16 @@ namespace PlannerAPI.Services.Implementations
                 );
             }
 
+            var hasAssignments = await _context.ResourceAssignments
+                .AnyAsync(a => a.ResourceGroupId == id);
+
+            if (hasAssignments)
+            {
+                throw new InvalidOperationException(
+                    "Impossible de supprimer ce groupe : il est utilisé dans une ou plusieurs assignations."
+                );
+            }
+
             _context.ResourceGroups.Remove(group);
 
             await _context.SaveChangesAsync();
@@ -103,19 +122,27 @@ namespace PlannerAPI.Services.Implementations
             return true;
         }
 
-        public async Task<bool> AddMemberAsync(ResourceGroupMemberCreateDto dto)
+        public async Task<ResourceGroupMemberReadDto> AddMemberAsync(ResourceGroupMemberCreateDto dto)
         {
             var groupExists = await _context.ResourceGroups
                 .AnyAsync(g => g.Id == dto.ResourceGroupId);
 
             if (!groupExists)
-                return false;
+            {
+                throw new InvalidOperationException(
+                    $"Groupe avec l'id {dto.ResourceGroupId} introuvable."
+                );
+            }
 
             var resourceExists = await _context.Resources
                 .AnyAsync(r => r.Id == dto.ResourceId);
 
             if (!resourceExists)
-                return false;
+            {
+                throw new InvalidOperationException(
+                    $"Ressource avec l'id {dto.ResourceId} introuvable."
+                );
+            }
 
             var alreadyExists = await _context.ResourceGroupMembers
                 .AnyAsync(m =>
@@ -124,7 +151,11 @@ namespace PlannerAPI.Services.Implementations
                 );
 
             if (alreadyExists)
-                return false;
+            {
+                throw new InvalidOperationException(
+                    "Cette ressource est déjà membre de ce groupe."
+                );
+            }
 
             var member = new ResourceGroupMember
             {
@@ -136,7 +167,11 @@ namespace PlannerAPI.Services.Implementations
 
             await _context.SaveChangesAsync();
 
-            return true;
+            var createdMember = await _context.ResourceGroupMembers
+                .Include(m => m.Resource)
+                .FirstAsync(m => m.Id == member.Id);
+
+            return MapMemberToReadDto(createdMember);
         }
 
         public async Task<bool> RemoveMemberAsync(int groupId, int resourceId)
@@ -166,6 +201,7 @@ namespace PlannerAPI.Services.Implementations
                 Description = group.Description,
                 Members = group.Members
                     .Where(m => m.Resource != null)
+                    .OrderBy(m => m.Resource!.Name)
                     .Select(MapMemberToReadDto)
                     .ToList()
             };
@@ -183,6 +219,22 @@ namespace PlannerAPI.Services.Implementations
                 CapacityHoursPerWeek = member.Resource?.CapacityHoursPerWeek ?? 0,
                 CostPerHour = member.Resource?.CostPerHour ?? 0
             };
+        }
+
+        private static string NormalizeRequiredText(string? value, string errorMessage)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException(errorMessage);
+
+            return value.Trim();
+        }
+
+        private static string? NormalizeOptionalText(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            return value.Trim();
         }
     }
 }

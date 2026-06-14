@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../dependencies/presentation/dependency_tab.dart';
 import '../../gantt/presentation/gantt_view.dart';
 import '../../tasks/presentation/task_list.dart';
+import '../data/project_api.dart';
 import '../data/project_insights_api.dart';
+import '../data/project_model.dart';
 import 'resource_analysis_card.dart';
 import 'summary_card.dart';
 import 'warnings_panel.dart';
@@ -24,16 +27,23 @@ class ProjectDetailScreen extends StatefulWidget {
 }
 
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
+  final ProjectApi _projectApi = ProjectApi();
   final ProjectInsightsApi _insightsApi = ProjectInsightsApi();
 
   int _selectedTabIndex = 0;
 
+  late Future<Project?> _projectFuture;
   late Future<_ProjectInsightsData> _insightsFuture;
 
   @override
   void initState() {
     super.initState();
+    _loadProject();
     _loadInsights();
+  }
+
+  void _loadProject() {
+    _projectFuture = _projectApi.getProjectById(widget.projectId);
   }
 
   void _loadInsights() {
@@ -53,8 +63,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
 
-  Future<void> _refreshInsights() async {
+  Future<void> _refreshAll() async {
     setState(() {
+      _loadProject();
       _loadInsights();
     });
   }
@@ -87,22 +98,58 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.initialProjectName ?? 'Projet #${widget.projectId}';
+    final fallbackTitle =
+        widget.initialProjectName ?? 'Projet #${widget.projectId}';
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(title),
+        title: FutureBuilder<Project?>(
+          future: _projectFuture,
+          builder: (context, snapshot) {
+            final project = snapshot.data;
+
+            return Text(project?.name ?? fallbackTitle);
+          },
+        ),
         actions: [
-          if (_selectedTabIndex == 1)
-            IconButton(
-              tooltip: 'Rafraîchir le dashboard',
-              onPressed: _refreshInsights,
-              icon: const Icon(Icons.refresh),
-            ),
+          IconButton(
+            tooltip: 'Rafraîchir',
+            onPressed: _refreshAll,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
       body: Column(
         children: [
+          FutureBuilder<Project?>(
+            future: _projectFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const LinearProgressIndicator();
+              }
+
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    'Erreur projet : ${snapshot.error}',
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                );
+              }
+
+              final project = snapshot.data;
+
+              if (project == null) {
+                return _ProjectHeaderFallback(
+                  projectId: widget.projectId,
+                  title: fallbackTitle,
+                );
+              }
+
+              return _ProjectHeader(project: project);
+            },
+          ),
           NavigationBar(
             selectedIndex: _selectedTabIndex,
             onDestinationSelected: (index) {
@@ -139,6 +186,125 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ProjectHeader extends StatelessWidget {
+  final Project project;
+
+  const _ProjectHeader({
+    required this.project,
+  });
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return '-';
+
+    return DateFormat('dd/MM/yyyy').format(date);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final code = project.projectCode?.isNotEmpty == true
+        ? project.projectCode!
+        : 'Code non défini';
+
+    final client = project.clientName?.isNotEmpty == true
+        ? project.clientName!
+        : 'Client non défini';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          _HeaderChip(
+            icon: Icons.badge_outlined,
+            label: 'ID projet',
+            value: '#${project.id}',
+          ),
+          _HeaderChip(
+            icon: Icons.confirmation_number_outlined,
+            label: 'Code',
+            value: code,
+          ),
+          _HeaderChip(
+            icon: Icons.business_outlined,
+            label: 'Client',
+            value: client,
+          ),
+          _HeaderChip(
+            icon: Icons.calendar_month_outlined,
+            label: 'Début',
+            value: _formatDate(project.startDate),
+          ),
+          _HeaderChip(
+            icon: Icons.event_available_outlined,
+            label: 'Fin',
+            value: _formatDate(project.endDate),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProjectHeaderFallback extends StatelessWidget {
+  final int projectId;
+  final String title;
+
+  const _ProjectHeaderFallback({
+    required this.projectId,
+    required this.title,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          _HeaderChip(
+            icon: Icons.folder_open,
+            label: 'Projet',
+            value: title,
+          ),
+          _HeaderChip(
+            icon: Icons.badge_outlined,
+            label: 'ID projet',
+            value: '#$projectId',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _HeaderChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      avatar: Icon(icon, size: 18),
+      label: Text('$label : $value'),
+      visualDensity: VisualDensity.compact,
     );
   }
 }

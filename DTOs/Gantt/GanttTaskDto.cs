@@ -11,7 +11,7 @@ namespace PlannerAPI.DTOs.Gantt
 
         public bool IsDone { get; set; }
         public bool IsCritical { get; set; }
-
+        public int ProgressPercent { get; set; }
         public int? ActualDuration { get; set; }
         public int? AssignedResourcesCount { get; set; }
         public decimal? WorkloadHours { get; set; }
@@ -22,6 +22,7 @@ namespace PlannerAPI.DTOs.Gantt
         public DateTime? LateFinish { get; set; }
         public int? TotalFloat { get; set; }
         public List<GanttResourceAssignmentDto> ResourceAssignments { get; set; } = new();
+
     }
 
     public class GanttDependencyDto

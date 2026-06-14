@@ -8,16 +8,16 @@ namespace PlannerAPI.Services.Interfaces
 
         Task<ResourceGroupReadDto?> GetByIdAsync(int id);
 
-        Task<IEnumerable<ResourceGroupMemberReadDto>> GetMembersAsync(int groupId);
+        Task<IEnumerable<ResourceGroupMemberReadDto>?> GetMembersAsync(int groupId);
 
         Task<ResourceGroupReadDto> CreateAsync(ResourceGroupCreateDto dto);
 
-        Task<bool> AddMemberAsync(ResourceGroupMemberCreateDto dto);
-
-        Task<bool> RemoveMemberAsync(int groupId, int resourceId);
-
-        Task<bool> UpdateAsync(int id, ResourceGroupUpdateDto dto);
+        Task<ResourceGroupReadDto?> UpdateAsync(int id, ResourceGroupUpdateDto dto);
 
         Task<bool> DeleteAsync(int id);
+
+        Task<ResourceGroupMemberReadDto> AddMemberAsync(ResourceGroupMemberCreateDto dto);
+
+        Task<bool> RemoveMemberAsync(int groupId, int resourceId);
     }
 }

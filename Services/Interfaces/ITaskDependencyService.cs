@@ -6,9 +6,9 @@ namespace PlannerAPI.Services.Interfaces
     {
         Task<IEnumerable<TaskDependencyReadDto>> GetByTaskIdAsync(int taskId);
 
-        Task AddDependencyAsync(TaskDependencyCreateDto dto);
+        Task<TaskDependencyReadDto> AddDependencyAsync(TaskDependencyCreateDto dto);
 
-        Task<bool> UpdateAsync(int id, TaskDependencyUpdateDto dto);
+        Task<TaskDependencyReadDto?> UpdateAsync(int id, TaskDependencyUpdateDto dto);
 
         Task<bool> DeleteAsync(int id);
     }

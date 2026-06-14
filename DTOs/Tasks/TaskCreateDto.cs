@@ -11,17 +11,22 @@ namespace PlannerAPI.DTOs.Tasks
         [StringLength(500)]
         public string? Description { get; set; }
 
-        public bool IsDone { get; set; } = false;
-
         [Required]
         public int ProjectId { get; set; }
 
         public DateTime? StartDate { get; set; }
+
         public DateTime? EndDate { get; set; }
+
         public int? Duration { get; set; }
+
         public int? ActualDuration { get; set; }
+
         public int? AssignedResourcesCount { get; set; }
+
         public decimal? WorkloadHours { get; set; }
-        public int ProgressPercent { get; set; } = 0 ;
+
+        [Range(0, 100)]
+        public int ProgressPercent { get; set; } = 0;
     }
 }

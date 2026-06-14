@@ -104,17 +104,14 @@ namespace PlannerAPI.Services.Implementations
             if (taskItem == null)
                 return null;
 
-            var projectExists = await _context.Projects
-                .AnyAsync(p => p.Id == dto.ProjectId);
-
-            if (!projectExists)
-                return null;
+            if (dto.ProjectId != taskItem.ProjectId)
+                throw new InvalidOperationException(
+                    "Le changement de projet d'une tâche existante n'est pas autorisé.");
 
             var progress = NormalizeProgress(dto.ProgressPercent);
 
             taskItem.Title = dto.Title;
             taskItem.Description = dto.Description;
-            taskItem.ProjectId = dto.ProjectId;
 
             taskItem.StartDate = dto.StartDate;
             taskItem.EndDate = dto.EndDate;
@@ -144,6 +141,20 @@ namespace PlannerAPI.Services.Implementations
 
             if (taskItem == null)
                 return false;
+
+            var hasDependencies = await _context.TaskDependencies
+                .AnyAsync(d => d.PredecessorId == id || d.SuccessorId == id);
+
+            if (hasDependencies)
+                throw new InvalidOperationException(
+                    "Impossible de supprimer cette tâche car elle est utilisée dans une ou plusieurs dépendances.");
+
+            var hasAssignments = await _context.ResourceAssignments
+                .AnyAsync(a => a.TaskId == id);
+
+            if (hasAssignments)
+                throw new InvalidOperationException(
+                    "Impossible de supprimer cette tâche car elle possède une ou plusieurs assignations de ressources.");
 
             _context.Tasks.Remove(taskItem);
 

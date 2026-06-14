@@ -37,12 +37,10 @@ namespace PlannerAPI.Controllers
         [HttpGet("{groupId}/members")]
         public async Task<ActionResult<IEnumerable<ResourceGroupMemberReadDto>>> GetMembers(int groupId)
         {
-            var group = await _groupService.GetByIdAsync(groupId);
-
-            if (group == null)
-                return NotFound($"Groupe avec l'id {groupId} introuvable.");
-
             var members = await _groupService.GetMembersAsync(groupId);
+
+            if (members == null)
+                return NotFound($"Groupe avec l'id {groupId} introuvable.");
 
             return Ok(members);
         }
@@ -50,20 +48,38 @@ namespace PlannerAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<ResourceGroupReadDto>> Create(ResourceGroupCreateDto dto)
         {
-            var result = await _groupService.CreateAsync(dto);
+            try
+            {
+                var result = await _groupService.CreateAsync(dto);
 
-            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+                return CreatedAtAction(
+                    nameof(GetById),
+                    new { id = result.Id },
+                    result
+                );
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, ResourceGroupUpdateDto dto)
+        public async Task<ActionResult<ResourceGroupReadDto>> Update(int id, ResourceGroupUpdateDto dto)
         {
-            var updated = await _groupService.UpdateAsync(id, dto);
+            try
+            {
+                var result = await _groupService.UpdateAsync(id, dto);
 
-            if (!updated)
-                return NotFound($"Groupe avec l'id {id} introuvable.");
+                if (result == null)
+                    return NotFound($"Groupe avec l'id {id} introuvable.");
 
-            return Ok("Groupe modifié avec succès.");
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpDelete("{id}")]
@@ -85,29 +101,36 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpPost("members")]
-        public async Task<IActionResult> AddMember(ResourceGroupMemberCreateDto dto)
+        public async Task<ActionResult<ResourceGroupMemberReadDto>> AddMember(ResourceGroupMemberCreateDto dto)
         {
-            var added = await _groupService.AddMemberAsync(dto);
-
-            if (!added)
+            try
             {
-                return BadRequest(
-                    "Impossible d'ajouter le membre. Vérifie que le groupe et la ressource existent, et que le membre n'est pas déjà présent."
-                );
-            }
+                var member = await _groupService.AddMemberAsync(dto);
 
-            return Ok("Membre ajouté avec succès.");
+                return Ok(member);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpDelete("{groupId}/members/{resourceId}")]
         public async Task<IActionResult> RemoveMember(int groupId, int resourceId)
         {
-            var removed = await _groupService.RemoveMemberAsync(groupId, resourceId);
+            try
+            {
+                var removed = await _groupService.RemoveMemberAsync(groupId, resourceId);
 
             if (!removed)
                 return NotFound("Membre introuvable dans ce groupe.");
 
-            return Ok("Membre retiré avec succès.");
+                return Ok("Membre retiré avec succès.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }

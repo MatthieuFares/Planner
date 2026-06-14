@@ -10,58 +10,42 @@ namespace PlannerAPI.Services.Implementations
     public class ProjectService : IProjectService
     {
         private readonly AppDbContext _context;
+        private readonly ITaskService _taskService;
 
-        public ProjectService(AppDbContext context)
+        public ProjectService(AppDbContext context, ITaskService taskService)
         {
             _context = context;
+            _taskService = taskService;
         }
 
         public async Task<IEnumerable<ProjectReadDto>> GetAllAsync()
         {
-            return await _context.Projects
-                .Select(p => new ProjectReadDto
-                {
-                    Id = p.Id,
-                    Name = p.Name,
-                    Description = p.Description
-                })
+            var projects = await _context.Projects
+                .OrderBy(p => p.Name)
                 .ToListAsync();
+
+            return projects.Select(MapToReadDto);
         }
 
         public async Task<ProjectReadDto?> GetByIdAsync(int id)
         {
-            return await _context.Projects
-                .Where(p => p.Id == id)
-                .Select(p => new ProjectReadDto
-                {
-                    Id = p.Id,
-                    Name = p.Name,
-                    Description = p.Description
-                })
-                .FirstOrDefaultAsync();
+            var project = await _context.Projects.FindAsync(id);
+
+            if (project == null)
+                return null;
+
+            return MapToReadDto(project);
         }
 
-        public async Task<IEnumerable<TaskReadDto>> GetTasksByProjectIdAsync(int projectId)
+        public async Task<IEnumerable<TaskReadDto>?> GetTasksByProjectIdAsync(int projectId)
         {
-            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projectId);
+            var projectExists = await _context.Projects
+                .AnyAsync(p => p.Id == projectId);
 
             if (!projectExists)
-                return Enumerable.Empty<TaskReadDto>();
+                return null;
 
-            return await _context.Tasks
-                .Where(t => t.ProjectId == projectId)
-                .Select(t => new TaskReadDto
-                {
-                    Id = t.Id,
-                    Title = t.Title,
-                    Description = t.Description,
-                    IsDone = t.IsDone,
-                    ProjectId = t.ProjectId,
-                    StartDate = t.StartDate,
-                    EndDate = t.EndDate,
-                    Duration = t.Duration
-                })
-                .ToListAsync();
+            return await _taskService.GetByProjectIdAsync(projectId);
         }
 
         public async Task<ProjectReadDto> CreateAsync(ProjectCreateDto dto)
@@ -69,32 +53,37 @@ namespace PlannerAPI.Services.Implementations
             var project = new Project
             {
                 Name = dto.Name,
-                Description = dto.Description
+                Description = dto.Description,
+                ClientName = dto.ClientName,
+                ProjectCode = dto.ProjectCode,
+                StartDate = dto.StartDate,
+                EndDate = dto.EndDate
             };
 
             _context.Projects.Add(project);
+
             await _context.SaveChangesAsync();
 
-            return new ProjectReadDto
-            {
-                Id = project.Id,
-                Name = project.Name,
-                Description = project.Description
-            };
+            return MapToReadDto(project);
         }
 
-        public async Task<bool> UpdateAsync(int id, ProjectUpdateDto dto)
+        public async Task<ProjectReadDto?> UpdateAsync(int id, ProjectUpdateDto dto)
         {
             var project = await _context.Projects.FindAsync(id);
 
             if (project == null)
-                return false;
+                return null;
 
             project.Name = dto.Name;
             project.Description = dto.Description;
+            project.ClientName = dto.ClientName;
+            project.ProjectCode = dto.ProjectCode;
+            project.StartDate = dto.StartDate;
+            project.EndDate = dto.EndDate;
 
             await _context.SaveChangesAsync();
-            return true;
+
+            return MapToReadDto(project);
         }
 
         public async Task<bool> DeleteAsync(int id)
@@ -105,8 +94,24 @@ namespace PlannerAPI.Services.Implementations
                 return false;
 
             _context.Projects.Remove(project);
+
             await _context.SaveChangesAsync();
+
             return true;
+        }
+
+        private static ProjectReadDto MapToReadDto(Project project)
+        {
+            return new ProjectReadDto
+            {
+                Id = project.Id,
+                Name = project.Name,
+                Description = project.Description,
+                ClientName = project.ClientName,
+                ProjectCode = project.ProjectCode,
+                StartDate = project.StartDate,
+                EndDate = project.EndDate
+            };
         }
     }
 }

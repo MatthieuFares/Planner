@@ -29,7 +29,7 @@ namespace PlannerAPI.Controllers
             var resource = await _resourceService.GetByIdAsync(id);
 
             if (resource == null)
-                return NotFound();
+                return NotFound($"Ressource avec l'id {id} introuvable.");
 
             return Ok(resource);
         }
@@ -37,31 +37,56 @@ namespace PlannerAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<ResourceReadDto>> Create(ResourceCreateDto dto)
         {
-            var result = await _resourceService.CreateAsync(dto);
+            try
+            {
+                var result = await _resourceService.CreateAsync(dto);
 
-            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+                return CreatedAtAction(
+                    nameof(GetById),
+                    new { id = result.Id },
+                    result
+                );
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, ResourceUpdateDto dto)
+        public async Task<ActionResult<ResourceReadDto>> Update(int id, ResourceUpdateDto dto)
         {
-            var updated = await _resourceService.UpdateAsync(id, dto);
+            try
+            {
+                var result = await _resourceService.UpdateAsync(id, dto);
 
-            if (!updated)
-                return NotFound();
+                if (result == null)
+                    return NotFound($"Ressource avec l'id {id} introuvable.");
 
-            return NoContent();
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var deleted = await _resourceService.DeleteAsync(id);
+            try
+            {
+                var deleted = await _resourceService.DeleteAsync(id);
 
-            if (!deleted)
-                return NotFound();
+                if (!deleted)
+                    return NotFound($"Ressource avec l'id {id} introuvable.");
 
-            return NoContent();
+                return Ok("Ressource supprimée avec succès.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }

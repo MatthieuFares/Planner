@@ -9,28 +9,28 @@ namespace PlannerAPI.Controllers
     public class TaskDependenciesController : ControllerBase
     {
         private readonly ITaskDependencyService _taskDependencyService;
-        private readonly ITaskSchedulingService _taskSchedulingService;
 
-        public TaskDependenciesController(ITaskDependencyService taskDependencyService, ITaskSchedulingService taskSchedulingService)
+        public TaskDependenciesController(ITaskDependencyService taskDependencyService)
         {
             _taskDependencyService = taskDependencyService;
-            _taskSchedulingService = taskSchedulingService;
         }
 
         [HttpGet("task/{taskId}")]
         public async Task<ActionResult<IEnumerable<TaskDependencyReadDto>>> GetByTask(int taskId)
         {
             var dependencies = await _taskDependencyService.GetByTaskIdAsync(taskId);
+
             return Ok(dependencies);
         }
 
         [HttpPost]
-        public async Task<IActionResult> AddDependency(TaskDependencyCreateDto dto)
+        public async Task<ActionResult<TaskDependencyReadDto>> AddDependency(TaskDependencyCreateDto dto)
         {
             try
             {
-                await _taskDependencyService.AddDependencyAsync(dto);
-                return Ok("Dépendance créée avec succès.");
+                var dependency = await _taskDependencyService.AddDependencyAsync(dto);
+
+                return Ok(dependency);
             }
             catch (InvalidOperationException ex)
             {
@@ -39,25 +39,32 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, TaskDependencyUpdateDto dto)
+        public async Task<ActionResult<TaskDependencyReadDto>> Update(int id, TaskDependencyUpdateDto dto)
         {
-            var updated = await _taskDependencyService.UpdateAsync(id, dto);
+            try
+            {
+                var dependency = await _taskDependencyService.UpdateAsync(id, dto);
 
-            if (!updated)
-                return NotFound("Dépendance introuvable ou invalide.");
-            await _taskSchedulingService.RecalculateTaskDatesAsync(dto.SuccessorId);
-            return NoContent();
+                if (dependency == null)
+                    return NotFound($"Dépendance avec l'id {id} introuvable.");
+
+                return Ok(dependency);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var result = await _taskDependencyService.DeleteAsync(id);
+            var deleted = await _taskDependencyService.DeleteAsync(id);
 
-            if (!result)
+            if (!deleted)
                 return NotFound($"Dépendance avec l'id {id} introuvable.");
 
-            return NoContent();
+            return Ok("Dépendance supprimée avec succès.");
         }
     }
 }

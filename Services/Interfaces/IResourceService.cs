@@ -10,7 +10,7 @@ namespace PlannerAPI.Services.Interfaces
 
         Task<ResourceReadDto> CreateAsync(ResourceCreateDto dto);
 
-        Task<bool> UpdateAsync(int id, ResourceUpdateDto dto);
+        Task<ResourceReadDto?> UpdateAsync(int id, ResourceUpdateDto dto);
 
         Task<bool> DeleteAsync(int id);
     }

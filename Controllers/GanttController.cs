@@ -41,6 +41,7 @@ namespace PlannerAPI.Controllers
                     Duration = t.Duration,
                     IsDone = t.IsDone,
                     IsCritical = t.IsCritical,
+                    ProgressPercent = t.ProgressPercent,
                     ActualDuration = t.ActualDuration,
                     AssignedResourcesCount = t.AssignedResourcesCount,
                     WorkloadHours = t.WorkloadHours,

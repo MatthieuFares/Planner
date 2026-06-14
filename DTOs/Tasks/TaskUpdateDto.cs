@@ -2,20 +2,31 @@ using System.ComponentModel.DataAnnotations;
 
 namespace PlannerAPI.DTOs.Tasks
 {
-public class TaskUpdateDto
-{
-    public string Title { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public bool IsDone { get; set; }
-    public int ProjectId { get; set; }
+    public class TaskUpdateDto
+    {
+        [Required]
+        [StringLength(100)]
+        public string Title { get; set; } = string.Empty;
 
-    public DateTime? StartDate { get; set; }
-    public DateTime? EndDate { get; set; }
-    public int? Duration { get; set; }
+        [StringLength(500)]
+        public string? Description { get; set; }
 
-    public int? ActualDuration { get; set; }
-    public int? AssignedResourcesCount { get; set; }
-    public decimal? WorkloadHours { get; set; }
-    public int ProgressPercent { get; set; } = 0 ;
-}
+        [Required]
+        public int ProjectId { get; set; }
+
+        public DateTime? StartDate { get; set; }
+
+        public DateTime? EndDate { get; set; }
+
+        public int? Duration { get; set; }
+
+        public int? ActualDuration { get; set; }
+
+        public int? AssignedResourcesCount { get; set; }
+
+        public decimal? WorkloadHours { get; set; }
+
+        [Range(0, 100)]
+        public int ProgressPercent { get; set; } = 0;
+    }
 }

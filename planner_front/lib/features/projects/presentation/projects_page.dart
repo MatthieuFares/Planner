@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../data/project_api.dart';
 import '../data/project_model.dart';
@@ -31,6 +32,31 @@ class _ProjectsPageState extends State<ProjectsPage> {
     setState(() {
       _loadProjects();
     });
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return '-';
+
+    return DateFormat('dd/MM/yyyy').format(date);
+  }
+
+  String _projectSubtitle(Project project) {
+    final client = project.clientName?.isNotEmpty == true
+        ? project.clientName!
+        : 'Client non défini';
+
+    final code = project.projectCode?.isNotEmpty == true
+        ? project.projectCode!
+        : 'Code non défini';
+
+    final dates =
+        'Début : ${_formatDate(project.startDate)} | Fin : ${_formatDate(project.endDate)}';
+
+    final description = project.description?.isNotEmpty == true
+        ? project.description!
+        : 'Aucune description';
+
+    return '$code · $client\n$dates\n$description';
   }
 
   void _openProject(Project project) {
@@ -120,7 +146,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
           title: const Text('Supprimer le projet'),
           content: Text(
             'Voulez-vous vraiment supprimer "${project.name}" ?\n\n'
-            'Attention : si le backend est configuré en cascade, les tâches liées peuvent aussi être supprimées.',
+            'Attention : les tâches liées peuvent aussi être supprimées.',
           ),
           actions: [
             TextButton(
@@ -160,6 +186,56 @@ class _ProjectsPageState extends State<ProjectsPage> {
         ),
       );
     }
+  }
+
+  Widget _buildProjectCard(Project project) {
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.folder_open),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                project.name,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Chip(
+              label: Text('Projet #${project.id}'),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(_projectSubtitle(project)),
+        ),
+        isThreeLine: true,
+        onTap: () => _openProject(project),
+        trailing: SizedBox(
+          width: 104,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                tooltip: 'Modifier',
+                onPressed: () => _editProject(project),
+                icon: const Icon(Icons.edit_outlined),
+              ),
+              IconButton(
+                tooltip: 'Supprimer',
+                onPressed: () => _deleteProject(project),
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -210,38 +286,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
             itemCount: projects.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
-              final project = projects[index];
-
-              return Card(
-                child: ListTile(
-                  leading: const Icon(Icons.folder_open),
-                  title: Text(project.name),
-                  subtitle: Text(
-                    project.description?.isNotEmpty == true
-                        ? project.description!
-                        : 'Projet #${project.id}',
-                  ),
-                  onTap: () => _openProject(project),
-                  trailing: SizedBox(
-                    width: 104,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        IconButton(
-                          tooltip: 'Modifier',
-                          onPressed: () => _editProject(project),
-                          icon: const Icon(Icons.edit_outlined),
-                        ),
-                        IconButton(
-                          tooltip: 'Supprimer',
-                          onPressed: () => _deleteProject(project),
-                          icon: const Icon(Icons.delete_outline),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
+              return _buildProjectCard(projects[index]);
             },
           );
         },
