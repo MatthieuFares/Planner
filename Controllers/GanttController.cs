@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlannerAPI.Data;
 using PlannerAPI.DTOs.Gantt;
+using PlannerAPI.Models;
 
 namespace PlannerAPI.Controllers
 {
@@ -62,36 +63,170 @@ namespace PlannerAPI.Controllers
 
                 ResourceAssignments = t.ResourceAssignments
                     .OrderBy(ra => ra.Resource?.Name ?? ra.ResourceGroup?.Name ?? string.Empty)
-                    .Select(ra => new GanttResourceAssignmentDto
-                    {
-                        AssignmentId = ra.Id,
-
-                        ResourceId = ra.ResourceId,
-                        ResourceName = ra.Resource?.Name,
-                        ResourceType = ra.Resource?.Type,
-
-                        ResourceGroupId = ra.ResourceGroupId,
-                        ResourceGroupName = ra.ResourceGroup?.Name,
-
-                        WorkloadHours = ra.WorkloadHours,
-                        AllocationPercent = ra.AllocationPercent
-                    })
+                    .Select(MapResourceAssignment)
                     .ToList(),
 
                 Dependencies = t.Predecessors
                     .OrderBy(d => d.PredecessorId)
-                    .Select(d => new GanttDependencyDto
-                    {
-                        Id = d.Id,
-                        PredecessorId = d.PredecessorId,
-                        SuccessorId = d.SuccessorId,
-                        Type = d.Type,
-                        OffsetDays = d.OffsetDays
-                    })
+                    .Select(MapDependency)
                     .ToList()
             });
 
             return Ok(result);
+        }
+
+        [HttpGet("project/{projectId}/structured")]
+        public async Task<ActionResult<GanttStructuredProjectDto>> GetStructuredProjectGantt(int projectId)
+        {
+            var project = await _context.Projects
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == projectId);
+
+            if (project == null)
+                return NotFound($"Projet avec l'id {projectId} introuvable.");
+
+            var items = await _context.PlanningItems
+                .AsNoTracking()
+                .Include(i => i.Task)
+                    .ThenInclude(t => t!.Predecessors)
+                .Include(i => i.Task)
+                    .ThenInclude(t => t!.ResourceAssignments)
+                        .ThenInclude(ra => ra.Resource)
+                .Include(i => i.Task)
+                    .ThenInclude(t => t!.ResourceAssignments)
+                        .ThenInclude(ra => ra.ResourceGroup)
+                .Where(i => i.ProjectId == projectId)
+                .OrderBy(i => i.WbsCode)
+                .ThenBy(i => i.SortOrder)
+                .ThenBy(i => i.Id)
+                .ToListAsync();
+
+            var result = new GanttStructuredProjectDto
+            {
+                ProjectId = project.Id,
+                ProjectName = project.Name,
+                ClientName = project.ClientName,
+                ProjectCode = project.ProjectCode,
+                ProjectStartDate = project.StartDate,
+                ProjectEndDate = project.EndDate,
+                Items = items.Select(item => MapPlanningItem(item, items)).ToList()
+            };
+
+            return Ok(result);
+        }
+
+        private static GanttPlanningItemDto MapPlanningItem(
+            PlanningItem item,
+            List<PlanningItem> projectItems)
+        {
+            return new GanttPlanningItemDto
+            {
+                Id = item.Id,
+                ProjectId = item.ProjectId,
+                ParentId = item.ParentId,
+                Name = item.Name,
+                Type = item.Type.ToString(),
+                SortOrder = item.SortOrder,
+                WbsCode = item.WbsCode,
+                Level = GetLevel(item, projectItems),
+                TaskId = item.TaskId,
+                Task = item.Task == null
+                    ? null
+                    : MapTaskDetails(item.Task)
+            };
+        }
+
+        private static GanttTaskDetailsDto MapTaskDetails(PlannerTask task)
+        {
+            return new GanttTaskDetailsDto
+            {
+                Id = task.Id,
+                Title = task.Title,
+
+                StartDate = task.StartDate,
+                EndDate = task.EndDate,
+                Duration = task.Duration,
+
+                IsDone = task.IsDone,
+                IsCritical = task.IsCritical,
+                ProgressPercent = task.ProgressPercent,
+
+                ActualDuration = task.ActualDuration,
+                AssignedResourcesCount = task.AssignedResourcesCount,
+                WorkloadHours = task.WorkloadHours,
+
+                EarlyStart = task.EarlyStart,
+                EarlyFinish = task.EarlyFinish,
+                LateStart = task.LateStart,
+                LateFinish = task.LateFinish,
+                TotalFloat = task.TotalFloat,
+
+                ResourceAssignments = task.ResourceAssignments
+                    .OrderBy(ra => ra.Resource?.Name ?? ra.ResourceGroup?.Name ?? string.Empty)
+                    .Select(MapResourceAssignment)
+                    .ToList(),
+
+                Dependencies = task.Predecessors
+                    .OrderBy(d => d.PredecessorId)
+                    .Select(MapDependency)
+                    .ToList()
+            };
+        }
+
+        private static GanttDependencyDto MapDependency(TaskDependency dependency)
+        {
+            return new GanttDependencyDto
+            {
+                Id = dependency.Id,
+                PredecessorId = dependency.PredecessorId,
+                SuccessorId = dependency.SuccessorId,
+                Type = dependency.Type,
+                OffsetDays = dependency.OffsetDays
+            };
+        }
+
+        private static GanttResourceAssignmentDto MapResourceAssignment(ResourceAssignment assignment)
+        {
+            return new GanttResourceAssignmentDto
+            {
+                AssignmentId = assignment.Id,
+
+                ResourceId = assignment.ResourceId,
+                ResourceName = assignment.Resource?.Name,
+                ResourceType = assignment.Resource?.Type,
+
+                ResourceGroupId = assignment.ResourceGroupId,
+                ResourceGroupName = assignment.ResourceGroup?.Name,
+
+                WorkloadHours = assignment.WorkloadHours,
+                AllocationPercent = assignment.AllocationPercent
+            };
+        }
+
+        private static int GetLevel(
+            PlanningItem item,
+            List<PlanningItem> projectItems)
+        {
+            var level = 0;
+            var currentParentId = item.ParentId;
+            var visited = new HashSet<int>();
+
+            while (currentParentId.HasValue)
+            {
+                if (!visited.Add(currentParentId.Value))
+                    break;
+
+                var parent = projectItems
+                    .FirstOrDefault(i => i.Id == currentParentId.Value);
+
+                if (parent == null)
+                    break;
+
+                level++;
+                currentParentId = parent.ParentId;
+            }
+
+            return level;
         }
     }
 }
