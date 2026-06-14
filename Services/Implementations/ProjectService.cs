@@ -60,6 +60,8 @@ namespace PlannerAPI.Services.Implementations
                 EndDate = dto.EndDate
             };
 
+            ValidateProjectDates(project.StartDate, project.EndDate);
+
             _context.Projects.Add(project);
 
             await _context.SaveChangesAsync();
@@ -80,6 +82,8 @@ namespace PlannerAPI.Services.Implementations
             project.ProjectCode = dto.ProjectCode;
             project.StartDate = dto.StartDate;
             project.EndDate = dto.EndDate;
+
+            ValidateProjectDates(project.StartDate, project.EndDate);
 
             await _context.SaveChangesAsync();
 
@@ -119,6 +123,16 @@ namespace PlannerAPI.Services.Implementations
                 StartDate = project.StartDate,
                 EndDate = project.EndDate
             };
+        }
+        private static void ValidateProjectDates(DateTime? startDate, DateTime? endDate)
+        {
+            if (startDate.HasValue &&
+                endDate.HasValue &&
+                endDate.Value.Date < startDate.Value.Date)
+            {
+                throw new InvalidOperationException(
+                    "La date de fin du projet ne peut pas être antérieure à la date de début.");
+            }
         }
     }
 }
