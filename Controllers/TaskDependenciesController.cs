@@ -59,12 +59,19 @@ namespace PlannerAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var deleted = await _taskDependencyService.DeleteAsync(id);
+            try
+            {
+                var deleted = await _taskDependencyService.DeleteAsync(id);
 
-            if (!deleted)
-                return NotFound($"Dépendance avec l'id {id} introuvable.");
+                if (!deleted)
+                    return NotFound($"Dépendance avec l'id {id} introuvable.");
 
-            return Ok("Dépendance supprimée avec succès.");
+                return Ok("Dépendance supprimée avec succès.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }

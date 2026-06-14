@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using PlannerAPI.Models;
 
 namespace PlannerAPI.DTOs.Dependencies
 {
@@ -12,7 +11,10 @@ namespace PlannerAPI.DTOs.Dependencies
         public int SuccessorId { get; set; }
 
         [Required]
+        [StringLength(2)]
         public string Type { get; set; } = "FS";
+
+        [Range(-3650, 3650)]
         public int OffsetDays { get; set; } = 0;
     }
 }
