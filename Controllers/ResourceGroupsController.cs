@@ -122,8 +122,8 @@ namespace PlannerAPI.Controllers
             {
                 var removed = await _groupService.RemoveMemberAsync(groupId, resourceId);
 
-            if (!removed)
-                return NotFound("Membre introuvable dans ce groupe.");
+                if (!removed)
+                    return NotFound("Membre introuvable dans ce groupe.");
 
                 return Ok("Membre retiré avec succès.");
             }
