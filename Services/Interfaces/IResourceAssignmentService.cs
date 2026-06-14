@@ -8,7 +8,7 @@ namespace PlannerAPI.Services.Interfaces
 
         Task<IEnumerable<ResourceAssignmentReadDto>> GetByTaskIdAsync(int taskId);
 
-        Task<bool> UpdateAsync(int id, ResourceAssignmentUpdateDto dto);
+        Task<ResourceAssignmentReadDto?> UpdateAsync(int id, ResourceAssignmentUpdateDto dto);
 
         Task<bool> DeleteAsync(int id);
     }

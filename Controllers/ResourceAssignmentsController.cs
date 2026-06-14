@@ -50,16 +50,18 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, ResourceAssignmentUpdateDto dto)
+        public async Task<ActionResult<ResourceAssignmentReadDto>> Update(
+            int id,
+            ResourceAssignmentUpdateDto dto)
         {
             try
             {
-                var updated = await _service.UpdateAsync(id, dto);
+                var assignment = await _service.UpdateAsync(id, dto);
 
-                if (!updated)
+                if (assignment == null)
                     return NotFound($"Assignation avec l'id {id} introuvable.");
 
-                return Ok("Assignation modifiée avec succès.");
+                return Ok(assignment);
             }
             catch (InvalidOperationException ex)
             {
@@ -70,12 +72,19 @@ namespace PlannerAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var deleted = await _service.DeleteAsync(id);
+            try
+            {
+                var deleted = await _service.DeleteAsync(id);
 
-            if (!deleted)
-                return NotFound($"Assignation avec l'id {id} introuvable.");
+                if (!deleted)
+                    return NotFound($"Assignation avec l'id {id} introuvable.");
 
-            return Ok("Assignation supprimée avec succès.");
+                return Ok("Assignation supprimée avec succès.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }

@@ -18,29 +18,20 @@ namespace PlannerAPI.Services.Implementations
         public async Task<ResourceAssignmentReadDto> CreateAsync(ResourceAssignmentCreateDto dto)
         {
             ValidateAssignmentTarget(dto.ResourceId, dto.ResourceGroupId);
+            ValidateAssignmentValues(dto.WorkloadHours, dto.AllocationPercent);
 
-            var taskExists = await _context.Tasks.AnyAsync(t => t.Id == dto.TaskId);
+            await ValidateAssignmentReferencesAsync(
+                dto.TaskId,
+                dto.ResourceId,
+                dto.ResourceGroupId
+            );
 
-            if (!taskExists)
-                throw new InvalidOperationException("Tâche introuvable.");
-
-            if (dto.ResourceId.HasValue)
-            {
-                var resourceExists = await _context.Resources
-                    .AnyAsync(r => r.Id == dto.ResourceId.Value);
-
-                if (!resourceExists)
-                    throw new InvalidOperationException("Ressource introuvable.");
-            }
-
-            if (dto.ResourceGroupId.HasValue)
-            {
-                var groupExists = await _context.ResourceGroups
-                    .AnyAsync(g => g.Id == dto.ResourceGroupId.Value);
-
-                if (!groupExists)
-                    throw new InvalidOperationException("Groupe de ressources introuvable.");
-            }
+            await EnsureAssignmentDoesNotAlreadyExistAsync(
+                dto.TaskId,
+                dto.ResourceId,
+                dto.ResourceGroupId,
+                ignoredAssignmentId: null
+            );
 
             var assignment = new ResourceAssignment
             {
@@ -55,13 +46,9 @@ namespace PlannerAPI.Services.Implementations
 
             await _context.SaveChangesAsync();
 
-            var createdAssignment = await _context.ResourceAssignments
-                .Include(a => a.Task)
-                .Include(a => a.Resource)
-                .Include(a => a.ResourceGroup)
-                .FirstAsync(a => a.Id == assignment.Id);
+            var createdAssignment = await GetAssignmentWithDetailsAsync(assignment.Id);
 
-            return MapToReadDto(createdAssignment);
+            return MapToReadDto(createdAssignment!);
         }
 
         public async Task<IEnumerable<ResourceAssignmentReadDto>> GetByTaskIdAsync(int taskId)
@@ -78,41 +65,34 @@ namespace PlannerAPI.Services.Implementations
                 .Where(a => a.TaskId == taskId)
                 .ToListAsync();
 
-            return assignments.Select(MapToReadDto);
+            return assignments
+                .OrderBy(a => a.Resource?.Name ?? a.ResourceGroup?.Name ?? string.Empty)
+                .Select(MapToReadDto);
         }
 
-        public async Task<bool> UpdateAsync(int id, ResourceAssignmentUpdateDto dto)
+        public async Task<ResourceAssignmentReadDto?> UpdateAsync(int id, ResourceAssignmentUpdateDto dto)
         {
             ValidateAssignmentTarget(dto.ResourceId, dto.ResourceGroupId);
+            ValidateAssignmentValues(dto.WorkloadHours, dto.AllocationPercent);
 
             var assignment = await _context.ResourceAssignments
                 .FirstOrDefaultAsync(a => a.Id == id);
 
             if (assignment == null)
-                return false;
+                return null;
 
-            var taskExists = await _context.Tasks.AnyAsync(t => t.Id == dto.TaskId);
+            await ValidateAssignmentReferencesAsync(
+                dto.TaskId,
+                dto.ResourceId,
+                dto.ResourceGroupId
+            );
 
-            if (!taskExists)
-                throw new InvalidOperationException("Tâche introuvable.");
-
-            if (dto.ResourceId.HasValue)
-            {
-                var resourceExists = await _context.Resources
-                    .AnyAsync(r => r.Id == dto.ResourceId.Value);
-
-                if (!resourceExists)
-                    throw new InvalidOperationException("Ressource introuvable.");
-            }
-
-            if (dto.ResourceGroupId.HasValue)
-            {
-                var groupExists = await _context.ResourceGroups
-                    .AnyAsync(g => g.Id == dto.ResourceGroupId.Value);
-
-                if (!groupExists)
-                    throw new InvalidOperationException("Groupe de ressources introuvable.");
-            }
+            await EnsureAssignmentDoesNotAlreadyExistAsync(
+                dto.TaskId,
+                dto.ResourceId,
+                dto.ResourceGroupId,
+                ignoredAssignmentId: id
+            );
 
             assignment.TaskId = dto.TaskId;
             assignment.ResourceId = dto.ResourceId;
@@ -122,7 +102,11 @@ namespace PlannerAPI.Services.Implementations
 
             await _context.SaveChangesAsync();
 
-            return true;
+            var updatedAssignment = await GetAssignmentWithDetailsAsync(id);
+
+            return updatedAssignment == null
+                ? null
+                : MapToReadDto(updatedAssignment);
         }
 
         public async Task<bool> DeleteAsync(int id)
@@ -139,6 +123,65 @@ namespace PlannerAPI.Services.Implementations
             return true;
         }
 
+        private async Task ValidateAssignmentReferencesAsync(
+            int taskId,
+            int? resourceId,
+            int? resourceGroupId)
+        {
+            var taskExists = await _context.Tasks.AnyAsync(t => t.Id == taskId);
+
+            if (!taskExists)
+                throw new InvalidOperationException("Tâche introuvable.");
+
+            if (resourceId.HasValue)
+            {
+                var resourceExists = await _context.Resources
+                    .AnyAsync(r => r.Id == resourceId.Value);
+
+                if (!resourceExists)
+                    throw new InvalidOperationException("Ressource introuvable.");
+            }
+
+            if (resourceGroupId.HasValue)
+            {
+                var groupExists = await _context.ResourceGroups
+                    .AnyAsync(g => g.Id == resourceGroupId.Value);
+
+                if (!groupExists)
+                    throw new InvalidOperationException("Groupe de ressources introuvable.");
+            }
+        }
+
+        private async Task EnsureAssignmentDoesNotAlreadyExistAsync(
+            int taskId,
+            int? resourceId,
+            int? resourceGroupId,
+            int? ignoredAssignmentId)
+        {
+            var alreadyExists = await _context.ResourceAssignments.AnyAsync(a =>
+                a.TaskId == taskId &&
+                a.ResourceId == resourceId &&
+                a.ResourceGroupId == resourceGroupId &&
+                (!ignoredAssignmentId.HasValue || a.Id != ignoredAssignmentId.Value)
+            );
+
+            if (alreadyExists)
+            {
+                throw new InvalidOperationException(
+                    "Cette assignation existe déjà pour cette tâche."
+                );
+            }
+        }
+
+        private async Task<ResourceAssignment?> GetAssignmentWithDetailsAsync(int id)
+        {
+            return await _context.ResourceAssignments
+                .Include(a => a.Task)
+                .Include(a => a.Resource)
+                .Include(a => a.ResourceGroup)
+                .FirstOrDefaultAsync(a => a.Id == id);
+        }
+
         private static void ValidateAssignmentTarget(int? resourceId, int? resourceGroupId)
         {
             if (!resourceId.HasValue && !resourceGroupId.HasValue)
@@ -152,6 +195,23 @@ namespace PlannerAPI.Services.Implementations
             {
                 throw new InvalidOperationException(
                     "Une assignation ne peut pas cibler une ressource et un groupe en même temps."
+                );
+            }
+        }
+
+        private static void ValidateAssignmentValues(decimal workloadHours, int allocationPercent)
+        {
+            if (workloadHours < 0)
+            {
+                throw new InvalidOperationException(
+                    "La charge de travail ne peut pas être négative."
+                );
+            }
+
+            if (allocationPercent < 0 || allocationPercent > 100)
+            {
+                throw new InvalidOperationException(
+                    "Le pourcentage d'allocation doit être compris entre 0 et 100."
                 );
             }
         }
@@ -174,6 +234,16 @@ namespace PlannerAPI.Services.Implementations
                 WorkloadHours = assignment.WorkloadHours,
                 AllocationPercent = assignment.AllocationPercent
             };
+        }
+    }
+
+    internal static class ResourceAssignmentOrderingExtensions
+    {
+        public static string ResourceNameForOrdering(this ResourceAssignment assignment)
+        {
+            return assignment.Resource?.Name
+                ?? assignment.ResourceGroup?.Name
+                ?? string.Empty;
         }
     }
 }
