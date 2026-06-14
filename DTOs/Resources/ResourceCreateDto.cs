@@ -12,8 +12,10 @@ namespace PlannerAPI.DTOs.Resources
         [StringLength(50)]
         public string Type { get; set; } = "Person";
 
+        [Range(0, double.MaxValue)]
         public decimal? CapacityHoursPerWeek { get; set; }
 
+        [Range(0, double.MaxValue)]
         public decimal? CostPerHour { get; set; }
     }
 }
