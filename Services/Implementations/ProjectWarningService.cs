@@ -16,7 +16,8 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task<IEnumerable<ProjectWarningDto>?> GetWarningsAsync(int projectId)
         {
-            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projectId);
+            var projectExists = await _context.Projects
+                .AnyAsync(p => p.Id == projectId);
 
             if (!projectExists)
                 return null;
@@ -30,8 +31,6 @@ namespace PlannerAPI.Services.Implementations
                 .Include(t => t.Predecessors)
                 .Include(t => t.Successors)
                 .ToListAsync();
-
-            var taskIds = tasks.Select(t => t.Id).ToList();
 
             foreach (var task in tasks)
             {
@@ -73,16 +72,21 @@ namespace PlannerAPI.Services.Implementations
 
                 var assignedHours = task.ResourceAssignments.Sum(ra => ra.WorkloadHours);
 
-                if (task.ResourceAssignments.Any() && task.WorkloadHours.HasValue && assignedHours != task.WorkloadHours.Value)
+                if (task.ResourceAssignments.Any() && task.WorkloadHours.HasValue)
                 {
-                    warnings.Add(new ProjectWarningDto
+                    var difference = Math.Abs(assignedHours - task.WorkloadHours.Value);
+
+                    if (difference > 0.01m)
                     {
-                        Type = "WorkloadMismatch",
-                        Severity = "Medium",
-                        TaskId = task.Id,
-                        TaskTitle = task.Title,
-                        Message = $"La tâche '{task.Title}' a {task.WorkloadHours.Value}h prévues mais {assignedHours}h assignées."
-                    });
+                        warnings.Add(new ProjectWarningDto
+                        {
+                            Type = "WorkloadMismatch",
+                            Severity = "Medium",
+                            TaskId = task.Id,
+                            TaskTitle = task.Title,
+                            Message = $"La tâche '{task.Title}' a {task.WorkloadHours.Value}h prévues mais {assignedHours}h assignées."
+                        });
+                    }
                 }
 
                 if (!task.Predecessors.Any() && !task.Successors.Any())

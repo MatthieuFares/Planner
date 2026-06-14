@@ -49,24 +49,38 @@ namespace PlannerAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<ProjectReadDto>> CreateProject(ProjectCreateDto dto)
         {
-            var result = await _projectService.CreateAsync(dto);
+            try
+            {
+                var result = await _projectService.CreateAsync(dto);
 
-            return CreatedAtAction(
-                nameof(GetProjectById),
-                new { id = result.Id },
-                result
-            );
+                return CreatedAtAction(
+                    nameof(GetProjectById),
+                    new { id = result.Id },
+                    result
+                );
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpPut("{id}")]
         public async Task<ActionResult<ProjectReadDto>> UpdateProject(int id, ProjectUpdateDto dto)
         {
-            var result = await _projectService.UpdateAsync(id, dto);
+            try
+            {
+                var result = await _projectService.UpdateAsync(id, dto);
 
-            if (result == null)
-                return NotFound($"Projet avec l'id {id} introuvable.");
+                if (result == null)
+                    return NotFound($"Projet avec l'id {id} introuvable.");
 
-            return Ok(result);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpDelete("{id}")]
