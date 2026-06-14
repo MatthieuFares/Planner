@@ -93,6 +93,13 @@ namespace PlannerAPI.Services.Implementations
             if (project == null)
                 return false;
 
+            var hasTasks = await _context.Tasks
+                .AnyAsync(t => t.ProjectId == id);
+
+            if (hasTasks)
+                throw new InvalidOperationException(
+                    "Impossible de supprimer ce projet car il contient une ou plusieurs tâches.");
+
             _context.Projects.Remove(project);
 
             await _context.SaveChangesAsync();

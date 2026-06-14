@@ -11,6 +11,7 @@ namespace PlannerAPI.DTOs.Projects
 
         public int TaskCount { get; set; }
         public int CompletedTaskCount { get; set; }
+        public int GlobalProgressPercent { get; set; }
 
         public int CriticalTaskCount { get; set; }
         public int NonCriticalTaskCount { get; set; }

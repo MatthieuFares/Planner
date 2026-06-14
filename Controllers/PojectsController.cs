@@ -72,12 +72,19 @@ namespace PlannerAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteProject(int id)
         {
-            var deleted = await _projectService.DeleteAsync(id);
+            try
+            {
+                var deleted = await _projectService.DeleteAsync(id);
 
-            if (!deleted)
-                return NotFound($"Projet avec l'id {id} introuvable.");
+                if (!deleted)
+                    return NotFound($"Projet avec l'id {id} introuvable.");
 
-            return Ok("Projet supprimé avec succès.");
+                return Ok("Projet supprimé avec succès.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }
