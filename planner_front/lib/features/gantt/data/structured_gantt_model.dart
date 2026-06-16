@@ -97,6 +97,10 @@ class StructuredGanttTask {
   final DateTime? lateFinish;
   final int totalFloat;
 
+  final DateTime? deadline;
+  final int delayDays;
+  final bool isLate;
+
   StructuredGanttTask({
     required this.id,
     required this.title,
@@ -114,6 +118,9 @@ class StructuredGanttTask {
     required this.lateStart,
     required this.lateFinish,
     required this.totalFloat,
+    required this.deadline,
+    required this.delayDays,
+    required this.isLate,
   });
 
   factory StructuredGanttTask.fromJson(Map<String, dynamic> json) {
@@ -144,6 +151,12 @@ class StructuredGanttTask {
           ? DateTime.parse(json['lateFinish'])
           : null,
       totalFloat: json['totalFloat'] ?? 0,
+
+      deadline: json['deadline'] != null
+          ? DateTime.parse(json['deadline'])
+          : null,
+      delayDays: json['delayDays'] ?? 0,
+      isLate: json['isLate'] ?? false,
     );
   }
 }

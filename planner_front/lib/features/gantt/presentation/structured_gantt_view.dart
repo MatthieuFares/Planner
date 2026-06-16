@@ -80,7 +80,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
           return Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'Erreur Gantt structuré : ${snapshot.error}',
+              'Erreur Gantt : ${snapshot.error}',
               style: const TextStyle(color: Colors.red),
             ),
           );
@@ -88,7 +88,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
 
         if (!snapshot.hasData) {
           return const Center(
-            child: Text('Aucune donnée à afficher dans le Gantt structuré.'),
+            child: Text('Aucune donnée à afficher dans le Gantt.'),
           );
         }
 
@@ -96,7 +96,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
 
         if (data.items.isEmpty) {
           return const Center(
-            child: Text('Aucun élément à afficher dans le Gantt structuré.'),
+            child: Text('Aucun élément à afficher dans le Gantt.'),
           );
         }
 
@@ -151,7 +151,6 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
 
     _leftVerticalController.addListener(() {
       if (_isSyncingRight) return;
-
       if (!_rightVerticalController.hasClients) return;
 
       _isSyncingLeft = true;
@@ -161,7 +160,6 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
 
     _rightVerticalController.addListener(() {
       if (_isSyncingLeft) return;
-
       if (!_leftVerticalController.hasClients) return;
 
       _isSyncingRight = true;
@@ -297,7 +295,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
           child: Row(
             children: [
               Text(
-                'Gantt structuré',
+                'Gantt',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(width: 16),
@@ -353,7 +351,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
           child: Row(
             children: [
               SizedBox(
-                width: 380,
+                width: 390,
                 child: Column(
                   children: [
                     Container(
@@ -396,8 +394,9 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final effectiveChartWidth =
-                        chartWidth < constraints.maxWidth ? constraints.maxWidth : chartWidth;
+                    final effectiveChartWidth = chartWidth < constraints.maxWidth
+                        ? constraints.maxWidth
+                        : chartWidth;
 
                     return Scrollbar(
                       controller: _horizontalController,
@@ -442,7 +441,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                     );
                   },
                 ),
-              ),  
+              ),
             ],
           ),
         ),
@@ -480,12 +479,22 @@ class _StructuredGanttLeftRow extends StatelessWidget {
       return Colors.indigo;
     }
 
-    if (item.task?.isDone == true) {
+    final task = item.task;
+
+    if (task == null) {
+      return Theme.of(context).colorScheme.primary;
+    }
+
+    if (task.isDone) {
       return Colors.green;
     }
 
-    if (item.task?.isCritical == true) {
+    if (task.isLate) {
       return Colors.red;
+    }
+
+    if (task.isCritical) {
+      return Colors.orange;
     }
 
     return Theme.of(context).colorScheme.primary;
@@ -495,6 +504,21 @@ class _StructuredGanttLeftRow extends StatelessWidget {
     if (item.type == 'Section') return FontWeight.bold;
     if (item.type == 'Zone') return FontWeight.w600;
     return FontWeight.normal;
+  }
+
+  String _formatTaskSubtitle(StructuredGanttTask task) {
+    final dates =
+        '${DateFormat('dd/MM').format(task.startDate)} → ${DateFormat('dd/MM').format(task.endDate)}';
+
+    if (task.isLate) {
+      return '$dates · Retard +${task.delayDays}j · Float ${task.totalFloat}';
+    }
+
+    if (task.isCritical) {
+      return '$dates · Critique · Float ${task.totalFloat}';
+    }
+
+    return '$dates · ${task.progressPercent}% · Float ${task.totalFloat}';
   }
 
   @override
@@ -552,8 +576,11 @@ class _StructuredGanttLeftRow extends StatelessWidget {
                           ? item.name
                           : '${item.name}\n'
                               'Tâche liée : ${task.title}\n'
+                              'Statut : ${task.isDone ? 'Terminée' : task.isLate ? 'En retard' : task.isCritical ? 'Critique' : 'En cours'}\n'
                               'Progression : ${task.progressPercent}%\n'
-                              'Float : ${task.totalFloat}',
+                              'Float : ${task.totalFloat}\n'
+                              'Deadline : ${task.deadline == null ? '-' : DateFormat('dd/MM/yyyy').format(task.deadline!)}\n'
+                              'Retard : ${task.isLate ? '+${task.delayDays}j' : '-'}',
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -568,15 +595,19 @@ class _StructuredGanttLeftRow extends StatelessWidget {
                           if (task != null) ...[
                             const SizedBox(height: 2),
                             Text(
-                              '${DateFormat('dd/MM').format(task.startDate)} → '
-                              '${DateFormat('dd/MM').format(task.endDate)}'
-                              ' · ${task.progressPercent}%'
-                              ' · Float ${task.totalFloat}',
+                              _formatTaskSubtitle(task),
                               overflow: TextOverflow.ellipsis,
                               style:
                                   Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Colors.grey.shade700,
+                                        color: task.isLate
+                                            ? Colors.red
+                                            : task.isCritical
+                                                ? Colors.orange.shade800
+                                                : Colors.grey.shade700,
                                         fontSize: 11,
+                                        fontWeight: task.isLate
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
                                       ),
                             ),
                           ],
@@ -730,6 +761,50 @@ class _TaskBar extends StatelessWidget {
     required this.dayWidth,
   });
 
+  Color _barColor(BuildContext context) {
+    if (task.isDone) {
+      return Colors.green;
+    }
+
+    if (task.isLate) {
+      return Colors.red;
+    }
+
+    if (task.isCritical) {
+      return Colors.orange;
+    }
+
+    return Theme.of(context).colorScheme.primary;
+  }
+
+  String _barLabel() {
+    if (task.isDone) {
+      return 'OK';
+    }
+
+    if (task.isLate) {
+      return '+${task.delayDays}j';
+    }
+
+    return '${task.progressPercent}%';
+  }
+
+  String _statusLabel() {
+    if (task.isDone) {
+      return 'Terminée';
+    }
+
+    if (task.isLate) {
+      return 'En retard';
+    }
+
+    if (task.isCritical) {
+      return 'Critique';
+    }
+
+    return 'En cours';
+  }
+
   @override
   Widget build(BuildContext context) {
     final offsetDays = task.startDate.difference(visibleStart).inDays;
@@ -745,24 +820,22 @@ class _TaskBar extends StatelessWidget {
       child: Tooltip(
         message: '${item.name}\n'
             'Tâche liée : ${task.title}\n'
-            'Statut : ${task.isDone ? 'Terminée' : 'En cours'}\n'
+            'Statut : ${_statusLabel()}\n'
             'Progression : ${task.progressPercent}%\n'
             'Durée : ${task.duration}j\n'
-            'Float : ${task.totalFloat}',
+            'Float : ${task.totalFloat}\n'
+            'Deadline : ${task.deadline == null ? '-' : DateFormat('dd/MM/yyyy').format(task.deadline!)}\n'
+            'Retard : ${task.isLate ? '+${task.delayDays}j' : '-'}',
         child: Container(
-          width: width < 22 ? 22 : width,
+          width: width < 26 ? 26 : width,
           height: 26,
           decoration: BoxDecoration(
-            color: task.isDone
-                ? Colors.green
-                : task.isCritical
-                    ? Colors.red
-                    : Theme.of(context).colorScheme.primary,
+            color: _barColor(context),
             borderRadius: BorderRadius.circular(8),
           ),
           alignment: Alignment.center,
           child: Text(
-            task.isDone ? 'OK' : '${task.progressPercent}%',
+            _barLabel(),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 11,
