@@ -13,5 +13,6 @@ namespace PlannerAPI.Services.Interfaces
         Task<PlanningItemReadDto?> UpdateAsync(int id, PlanningItemUpdateDto dto);
 
         Task<bool> DeleteAsync(int id);
+        Task<PlanningItemSyncResultDto> SyncProjectTasksAsync(int projectId);
     }
 }

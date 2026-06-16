@@ -67,6 +67,32 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     });
   }
 
+  Future<void> _syncTasks() async {
+    try {
+      await _ganttApi.syncProjectTasks(widget.projectId);
+
+      setState(() {
+        _loadGantt();
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tâches synchronisées avec le Gantt.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur synchronisation : $error'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<StructuredGanttResponse>(
@@ -106,6 +132,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
           displayMode: _displayMode,
           onDisplayModeChanged: _changeDisplayMode,
           onRefresh: _refreshGantt,
+          onSyncTasks: _syncTasks,
           onZoomIn: _zoomIn,
           onZoomOut: _zoomOut,
         );
@@ -120,6 +147,7 @@ class _StructuredGanttChart extends StatefulWidget {
   final StructuredGanttDisplayMode displayMode;
   final ValueChanged<StructuredGanttDisplayMode?> onDisplayModeChanged;
   final VoidCallback onRefresh;
+  final Future<void> Function() onSyncTasks;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
 
@@ -129,6 +157,7 @@ class _StructuredGanttChart extends StatefulWidget {
     required this.displayMode,
     required this.onDisplayModeChanged,
     required this.onRefresh,
+    required this.onSyncTasks,
     required this.onZoomIn,
     required this.onZoomOut,
   });
@@ -337,6 +366,14 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                 onPressed: widget.onZoomIn,
                 icon: const Icon(Icons.zoom_in),
                 label: const Text('Zoom +'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  widget.onSyncTasks();
+                },
+                icon: const Icon(Icons.sync),
+                label: const Text('Synchroniser'),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(

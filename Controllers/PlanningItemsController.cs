@@ -59,6 +59,21 @@ namespace PlannerAPI.Controllers
                 return BadRequest(ex.Message);
             }
         }
+        
+        [HttpPost("project/{projectId}/sync-tasks")]
+        public async Task<ActionResult<PlanningItemSyncResultDto>> SyncProjectTasks(int projectId)
+        {
+            try
+            {
+                var result = await _planningItemService.SyncProjectTasksAsync(projectId);
+
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
 
         [HttpPut("{id}")]
         public async Task<ActionResult<PlanningItemReadDto>> Update(int id, PlanningItemUpdateDto dto)
