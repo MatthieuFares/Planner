@@ -93,6 +93,24 @@ namespace PlannerAPI.Controllers
             }
         }
 
+        [HttpPost("{id}/move")]
+        public async Task<ActionResult<PlanningItemReadDto>> Move(int id, PlanningItemMoveDto dto)
+        {
+            try
+            {
+                var result = await _planningItemService.MoveAsync(id, dto);
+
+                if (result == null)
+                    return NotFound($"Élément de planning avec l'id {id} introuvable.");
+
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {

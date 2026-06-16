@@ -9,10 +9,21 @@ class StructuredGanttApi {
 
     return StructuredGanttResponse.fromJson(response.data);
   }
-  
+
   Future<void> syncProjectTasks(int projectId) async {
     await ApiClient.dio.post(
       '/PlanningItems/project/$projectId/sync-tasks',
+    );
+  }
+  Future<void> movePlanningItem({
+    required int itemId,
+    required int newParentId,
+  }) async {
+    await ApiClient.dio.post(
+      '/PlanningItems/$itemId/move',
+      data: {
+        'newParentId': newParentId,
+      },
     );
   }
 }

@@ -93,6 +93,85 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     }
   }
 
+  Future<void> _moveItem({
+    required StructuredGanttItem item,
+    required List<StructuredGanttItem> possibleParents,
+  }) async {
+    StructuredGanttItem? selectedParent;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Déplacer "${item.name}"'),
+          content: StatefulBuilder(
+            builder: (context, setDialogState) {
+              return DropdownButtonFormField<StructuredGanttItem>(
+                value: selectedParent,
+                decoration: const InputDecoration(
+                  labelText: 'Déplacer vers',
+                  border: OutlineInputBorder(),
+                ),
+                items: possibleParents.map((parent) {
+                  return DropdownMenuItem(
+                    value: parent,
+                    child: Text('${parent.wbsCode} - ${parent.name}'),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedParent = value;
+                  });
+                },
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (selectedParent == null) return;
+
+                Navigator.of(context).pop();
+
+                try {
+                  await _ganttApi.movePlanningItem(
+                    itemId: item.id,
+                    newParentId: selectedParent!.id,
+                  );
+
+                  setState(() {
+                    _loadGantt();
+                  });
+
+                  if (!mounted) return;
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Tâche déplacée avec succès.'),
+                    ),
+                  );
+                } catch (error) {
+                  if (!mounted) return;
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Erreur déplacement : $error'),
+                    ),
+                  );
+                }
+              },
+              child: const Text('Déplacer'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<StructuredGanttResponse>(
@@ -121,8 +200,19 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
         final data = snapshot.data!;
 
         if (data.items.isEmpty) {
-          return const Center(
-            child: Text('Aucun élément à afficher dans le Gantt.'),
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Aucun élément à afficher dans le Gantt.'),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _syncTasks,
+                  icon: const Icon(Icons.sync),
+                  label: const Text('Synchroniser les tâches'),
+                ),
+              ],
+            ),
           );
         }
 
@@ -133,6 +223,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
           onDisplayModeChanged: _changeDisplayMode,
           onRefresh: _refreshGantt,
           onSyncTasks: _syncTasks,
+          onMoveItem: _moveItem,
           onZoomIn: _zoomIn,
           onZoomOut: _zoomOut,
         );
@@ -148,6 +239,10 @@ class _StructuredGanttChart extends StatefulWidget {
   final ValueChanged<StructuredGanttDisplayMode?> onDisplayModeChanged;
   final VoidCallback onRefresh;
   final Future<void> Function() onSyncTasks;
+  final Future<void> Function({
+    required StructuredGanttItem item,
+    required List<StructuredGanttItem> possibleParents,
+  }) onMoveItem;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
 
@@ -158,6 +253,7 @@ class _StructuredGanttChart extends StatefulWidget {
     required this.onDisplayModeChanged,
     required this.onRefresh,
     required this.onSyncTasks,
+    required this.onMoveItem,
     required this.onZoomIn,
     required this.onZoomOut,
   });
@@ -288,11 +384,47 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
   @override
   Widget build(BuildContext context) {
     final items = widget.data.items;
+
     final taskItems = items.where((item) => item.task != null).toList();
 
+    final possibleParents = items
+        .where((item) => item.type == 'Section' || item.type == 'Zone')
+        .toList();
+
     if (taskItems.isEmpty) {
-      return const Center(
-        child: Text('La structure existe, mais aucune tâche n’est liée.'),
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Text(
+                  'Gantt',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const Spacer(),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    widget.onSyncTasks();
+                  },
+                  icon: const Icon(Icons.sync),
+                  label: const Text('Synchroniser'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: widget.onRefresh,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Rafraîchir'),
+                ),
+              ],
+            ),
+          ),
+          const Expanded(
+            child: Center(
+              child: Text('La structure existe, mais aucune tâche n’est liée.'),
+            ),
+          ),
+        ],
       );
     }
 
@@ -421,7 +553,14 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                         itemCount: items.length,
                         itemBuilder: (context, index) {
                           final item = items[index];
-                          return _StructuredGanttLeftRow(item: item);
+
+                          return _StructuredGanttLeftRow(
+                            item: item,
+                            possibleParents: possibleParents
+                                .where((parent) => parent.id != item.id)
+                                .toList(),
+                            onMoveItem: widget.onMoveItem,
+                          );
                         },
                       ),
                     ),
@@ -431,9 +570,10 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final effectiveChartWidth = chartWidth < constraints.maxWidth
-                        ? constraints.maxWidth
-                        : chartWidth;
+                    final effectiveChartWidth =
+                        chartWidth < constraints.maxWidth
+                            ? constraints.maxWidth
+                            : chartWidth;
 
                     return Scrollbar(
                       controller: _horizontalController,
@@ -489,9 +629,16 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
 
 class _StructuredGanttLeftRow extends StatelessWidget {
   final StructuredGanttItem item;
+  final List<StructuredGanttItem> possibleParents;
+  final Future<void> Function({
+    required StructuredGanttItem item,
+    required List<StructuredGanttItem> possibleParents,
+  }) onMoveItem;
 
   const _StructuredGanttLeftRow({
     required this.item,
+    required this.possibleParents,
+    required this.onMoveItem,
   });
 
   IconData _getIcon() {
@@ -634,24 +781,42 @@ class _StructuredGanttLeftRow extends StatelessWidget {
                             Text(
                               _formatTaskSubtitle(task),
                               overflow: TextOverflow.ellipsis,
-                              style:
-                                  Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: task.isLate
-                                            ? Colors.red
-                                            : task.isCritical
-                                                ? Colors.orange.shade800
-                                                : Colors.grey.shade700,
-                                        fontSize: 11,
-                                        fontWeight: task.isLate
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                      ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: task.isLate
+                                        ? Colors.red
+                                        : task.isCritical
+                                            ? Colors.orange.shade800
+                                            : Colors.grey.shade700,
+                                    fontSize: 11,
+                                    fontWeight: task.isLate
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
                             ),
                           ],
                         ],
                       ),
                     ),
                   ),
+                  if (item.type == 'Task') ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Déplacer',
+                      icon: const Icon(
+                        Icons.drive_file_move_outline,
+                        size: 18,
+                      ),
+                      onPressed: () {
+                        onMoveItem(
+                          item: item,
+                          possibleParents: possibleParents,
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),

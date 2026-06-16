@@ -512,5 +512,57 @@ namespace PlannerAPI.Services.Implementations
                 CreatedItems = tasksToSync.Count
             };
         }
+
+        public async Task<PlanningItemReadDto?> MoveAsync(int id, PlanningItemMoveDto dto)
+        {
+            var item = await _context.PlanningItems
+                .FirstOrDefaultAsync(i => i.Id == id);
+
+            if (item == null)
+                return null;
+
+            if (item.Type != PlanningItemType.Task)
+                throw new InvalidOperationException("Seules les tâches peuvent être déplacées pour le moment.");
+
+            var newParent = await _context.PlanningItems
+                .FirstOrDefaultAsync(i => i.Id == dto.NewParentId);
+
+            if (newParent == null)
+                throw new InvalidOperationException($"Parent cible avec l'id {dto.NewParentId} introuvable.");
+
+            if (newParent.ProjectId != item.ProjectId)
+                throw new InvalidOperationException("Impossible de déplacer un élément vers un autre projet.");
+
+            if (newParent.Type != PlanningItemType.Section &&
+                newParent.Type != PlanningItemType.Zone)
+                throw new InvalidOperationException("Le parent cible doit être une Section ou une Zone.");
+
+            var nextSortOrder = await _context.PlanningItems
+                .Where(i => i.ProjectId == item.ProjectId && i.ParentId == newParent.Id)
+                .Select(i => (int?)i.SortOrder)
+                .MaxAsync() ?? 0;
+
+            nextSortOrder++;
+
+            item.ParentId = newParent.Id;
+            item.SortOrder = nextSortOrder;
+            item.WbsCode = $"{newParent.WbsCode}.{nextSortOrder}";
+
+            await _context.SaveChangesAsync();
+
+            var updatedItem = await _context.PlanningItems
+                .AsNoTracking()
+                .FirstOrDefaultAsync(i => i.Id == id);
+
+           if (updatedItem == null)
+                return null;
+
+            var projectItems = await _context.PlanningItems
+                .AsNoTracking()
+                .Where(i => i.ProjectId == updatedItem.ProjectId)
+                .ToListAsync();
+
+            return MapToReadDto(updatedItem, projectItems: projectItems);
+        }
     }
 }
