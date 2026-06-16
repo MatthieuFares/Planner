@@ -355,7 +355,45 @@ namespace PlannerAPI.Services.Implementations
                 }
             }
 
+            // Deadline / retard / float négatif
+            foreach (var task in tasks)
+            {
+                ApplyDeadlineStatus(task);
+            }
+
             await _context.SaveChangesAsync();
+        }
+
+        private static void ApplyDeadlineStatus(PlannerTask task)
+        {
+            if (!task.Deadline.HasValue || !task.EndDate.HasValue)
+            {
+                task.DelayDays = 0;
+                task.IsLate = false;
+                return;
+            }
+
+            var deadlineDate = task.Deadline.Value.Date;
+            var endDate = task.EndDate.Value.Date;
+
+            var deadlineFloat = (deadlineDate - endDate).Days;
+
+            task.TotalFloat = task.TotalFloat.HasValue
+                ? Math.Min(task.TotalFloat.Value, deadlineFloat)
+                : deadlineFloat;
+
+            if (deadlineFloat < 0)
+            {
+                task.DelayDays = -deadlineFloat;
+                task.IsLate = true;
+            }
+            else
+            {
+                task.DelayDays = 0;
+                task.IsLate = false;
+            }
+
+            task.IsCritical = task.TotalFloat.HasValue && task.TotalFloat.Value <= 0;
         }
     }
 }

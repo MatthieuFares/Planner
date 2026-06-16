@@ -28,5 +28,6 @@ namespace PlannerAPI.DTOs.Tasks
 
         [Range(0, 100)]
         public int ProgressPercent { get; set; } = 0;
+        public DateTime? Deadline { get; set; }
     }
 }

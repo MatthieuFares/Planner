@@ -4,7 +4,7 @@ import 'structured_gantt_model.dart';
 class StructuredGanttApi {
   Future<StructuredGanttResponse> getStructuredGantt(int projectId) async {
     final response = await ApiClient.dio.get(
-      '/api/Gantt/structured/project/$projectId',
+      '/Gantt/project/$projectId/structured',
     );
 
     return StructuredGanttResponse.fromJson(response.data);

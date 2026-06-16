@@ -43,13 +43,13 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
 
   void _zoomIn() {
     setState(() {
-      _dayWidth = (_dayWidth + 4).clamp(12, 48);
+      _dayWidth = (_dayWidth + 4).clamp(12, 48).toDouble();
     });
   }
 
   void _zoomOut() {
     setState(() {
-      _dayWidth = (_dayWidth - 4).clamp(12, 48);
+      _dayWidth = (_dayWidth - 4).clamp(12, 48).toDouble();
     });
   }
 
@@ -139,10 +139,42 @@ class _StructuredGanttChart extends StatefulWidget {
 
 class _StructuredGanttChartState extends State<_StructuredGanttChart> {
   final ScrollController _horizontalController = ScrollController();
+  final ScrollController _leftVerticalController = ScrollController();
+  final ScrollController _rightVerticalController = ScrollController();
+
+  bool _isSyncingLeft = false;
+  bool _isSyncingRight = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _leftVerticalController.addListener(() {
+      if (_isSyncingRight) return;
+
+      if (!_rightVerticalController.hasClients) return;
+
+      _isSyncingLeft = true;
+      _rightVerticalController.jumpTo(_leftVerticalController.offset);
+      _isSyncingLeft = false;
+    });
+
+    _rightVerticalController.addListener(() {
+      if (_isSyncingLeft) return;
+
+      if (!_leftVerticalController.hasClients) return;
+
+      _isSyncingRight = true;
+      _leftVerticalController.jumpTo(_rightVerticalController.offset);
+      _isSyncingRight = false;
+    });
+  }
 
   @override
   void dispose() {
     _horizontalController.dispose();
+    _leftVerticalController.dispose();
+    _rightVerticalController.dispose();
     super.dispose();
   }
 
@@ -179,7 +211,19 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
   }) {
     switch (widget.displayMode) {
       case StructuredGanttDisplayMode.auto:
-        return (start: projectStart, end: projectEnd);
+        final rawDays = projectEnd.difference(projectStart).inDays;
+
+        if (rawDays < 14) {
+          return (
+            start: projectStart.subtract(const Duration(days: 3)),
+            end: projectStart.add(const Duration(days: 18)),
+          );
+        }
+
+        return (
+          start: projectStart.subtract(const Duration(days: 2)),
+          end: projectEnd.add(const Duration(days: 5)),
+        );
 
       case StructuredGanttDisplayMode.month:
         return (
@@ -217,7 +261,6 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
   @override
   Widget build(BuildContext context) {
     final items = widget.data.items;
-
     final taskItems = items.where((item) => item.task != null).toList();
 
     if (taskItems.isEmpty) {
@@ -258,10 +301,15 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(width: 16),
-              Text(
-                '${widget.data.projectName} — ${DateFormat('dd/MM/yyyy').format(visibleStart)} → ${DateFormat('dd/MM/yyyy').format(visibleEnd)}',
+              Expanded(
+                child: Text(
+                  '${widget.data.projectName} — '
+                  '${DateFormat('dd/MM/yyyy').format(visibleStart)} → '
+                  '${DateFormat('dd/MM/yyyy').format(visibleEnd)}',
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 16),
               SizedBox(
                 width: 150,
                 child: DropdownButtonFormField<StructuredGanttDisplayMode>(
@@ -305,16 +353,15 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
           child: Row(
             children: [
               SizedBox(
-                width: 360,
+                width: 380,
                 child: Column(
                   children: [
                     Container(
                       height: 64,
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest,
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       child: const Row(
                         children: [
                           SizedBox(
@@ -335,10 +382,10 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                     ),
                     Expanded(
                       child: ListView.builder(
+                        controller: _leftVerticalController,
                         itemCount: items.length,
                         itemBuilder: (context, index) {
                           final item = items[index];
-
                           return _StructuredGanttLeftRow(item: item);
                         },
                       ),
@@ -347,47 +394,55 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                 ),
               ),
               Expanded(
-                child: Scrollbar(
-                  controller: _horizontalController,
-                  thumbVisibility: true,
-                  trackVisibility: true,
-                  notificationPredicate: (notification) {
-                    return notification.metrics.axis == Axis.horizontal;
-                  },
-                  child: SingleChildScrollView(
-                    controller: _horizontalController,
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: chartWidth,
-                      child: Column(
-                        children: [
-                          _StructuredGanttDateHeader(
-                            visibleStart: visibleStart,
-                            totalDays: totalDays,
-                            dayWidth: widget.dayWidth,
-                          ),
-                          Expanded(
-                            child: ListView.builder(
-                              itemCount: items.length,
-                              itemBuilder: (context, index) {
-                                final item = items[index];
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final effectiveChartWidth =
+                        chartWidth < constraints.maxWidth ? constraints.maxWidth : chartWidth;
 
-                                return _StructuredGanttBarRow(
-                                  item: item,
-                                  visibleStart: visibleStart,
-                                  totalDays: totalDays,
-                                  dayWidth: widget.dayWidth,
-                                );
-                              },
-                            ),
+                    return Scrollbar(
+                      controller: _horizontalController,
+                      thumbVisibility: true,
+                      trackVisibility: true,
+                      notificationPredicate: (notification) {
+                        return notification.metrics.axis == Axis.horizontal;
+                      },
+                      child: SingleChildScrollView(
+                        controller: _horizontalController,
+                        scrollDirection: Axis.horizontal,
+                        child: SizedBox(
+                          width: effectiveChartWidth,
+                          child: Column(
+                            children: [
+                              _StructuredGanttDateHeader(
+                                visibleStart: visibleStart,
+                                totalDays: totalDays,
+                                dayWidth: widget.dayWidth,
+                              ),
+                              Expanded(
+                                child: ListView.builder(
+                                  controller: _rightVerticalController,
+                                  itemCount: items.length,
+                                  itemBuilder: (context, index) {
+                                    final item = items[index];
+
+                                    return _StructuredGanttBarRow(
+                                      item: item,
+                                      visibleStart: visibleStart,
+                                      totalDays: totalDays,
+                                      dayWidth: widget.dayWidth,
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
                           ),
-                          const SizedBox(height: 14),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
-              ),
+              ),  
             ],
           ),
         ),
@@ -451,9 +506,15 @@ class _StructuredGanttLeftRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: item.type == 'Section'
-            ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.45)
+            ? Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withOpacity(0.45)
             : item.type == 'Zone'
-                ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.25)
+                ? Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withOpacity(0.25)
                 : null,
         border: Border(
           bottom: BorderSide(
@@ -507,14 +568,16 @@ class _StructuredGanttLeftRow extends StatelessWidget {
                           if (task != null) ...[
                             const SizedBox(height: 2),
                             Text(
-                              '${DateFormat('dd/MM').format(task.startDate)} → ${DateFormat('dd/MM').format(task.endDate)}'
+                              '${DateFormat('dd/MM').format(task.startDate)} → '
+                              '${DateFormat('dd/MM').format(task.endDate)}'
                               ' · ${task.progressPercent}%'
                               ' · Float ${task.totalFloat}',
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.grey.shade700,
-                                    fontSize: 11,
-                                  ),
+                              style:
+                                  Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Colors.grey.shade700,
+                                        fontSize: 11,
+                                      ),
                             ),
                           ],
                         ],
@@ -605,9 +668,15 @@ class _StructuredGanttBarRow extends StatelessWidget {
       height: 64,
       decoration: BoxDecoration(
         color: item.type == 'Section'
-            ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.45)
+            ? Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withOpacity(0.45)
             : item.type == 'Zone'
-                ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.25)
+                ? Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withOpacity(0.25)
                 : null,
         border: Border(
           bottom: BorderSide(
@@ -635,7 +704,6 @@ class _StructuredGanttBarRow extends StatelessWidget {
               );
             }),
           ),
-
           if (task != null)
             _TaskBar(
               item: item,

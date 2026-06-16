@@ -81,7 +81,8 @@ namespace PlannerAPI.Services.Implementations
                 WorkloadHours = dto.WorkloadHours,
 
                 ProgressPercent = progress,
-                IsDone = progress >= 100
+                IsDone = progress >= 100,
+                Deadline = dto.Deadline,
             };
 
             _context.Tasks.Add(taskItem);
@@ -123,6 +124,7 @@ namespace PlannerAPI.Services.Implementations
 
             taskItem.ProgressPercent = progress;
             taskItem.IsDone = progress >= 100;
+            taskItem.Deadline = dto.Deadline;
 
             await _context.SaveChangesAsync();
 
@@ -193,7 +195,10 @@ namespace PlannerAPI.Services.Implementations
                 LateFinish = task.LateFinish,
                 TotalFloat = task.TotalFloat,
 
-                ProgressPercent = task.ProgressPercent
+                ProgressPercent = task.ProgressPercent,
+                Deadline = task.Deadline,
+                DelayDays = task.DelayDays,
+                IsLate = task.IsLate,
             };
         }
     }

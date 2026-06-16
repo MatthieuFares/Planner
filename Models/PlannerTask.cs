@@ -37,6 +37,9 @@ namespace PlannerAPI.Models
         public DateTime? LateFinish { get; set; }
         public int? TotalFloat { get; set; }
         public bool IsCritical { get; set; } = false;
+        public DateTime? Deadline { get; set; }
+        public int DelayDays { get; set; } = 0;
+        public bool IsLate { get; set; } = false;
 
         // Relations
         public List<TaskDependency> Predecessors { get; set; } = new();

@@ -37,5 +37,8 @@ namespace PlannerAPI.DTOs.Tasks
         public int? TotalFloat { get; set; }
 
         public int ProgressPercent { get; set; }
+        public DateTime? Deadline { get; set; }
+        public int DelayDays { get; set; }
+        public bool IsLate { get; set; }
     }
 }

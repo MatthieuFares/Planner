@@ -38,6 +38,9 @@ namespace PlannerAPI.DTOs.Gantt
         public List<GanttDependencyDto> Dependencies { get; set; } = new();
 
         public List<GanttResourceAssignmentDto> ResourceAssignments { get; set; } = new();
+        public DateTime? Deadline { get; set; }
+        public int DelayDays { get; set; }
+        public bool IsLate { get; set; }
     }
 
     // Nouveau format structuré : GET /api/Gantt/project/{projectId}/structured
@@ -118,6 +121,9 @@ namespace PlannerAPI.DTOs.Gantt
         public List<GanttDependencyDto> Dependencies { get; set; } = new();
 
         public List<GanttResourceAssignmentDto> ResourceAssignments { get; set; } = new();
+        public DateTime? Deadline { get; set; }
+        public int DelayDays { get; set; }
+        public bool IsLate { get; set; }
     }
 
     public class GanttDependencyDto
@@ -150,5 +156,6 @@ namespace PlannerAPI.DTOs.Gantt
         public decimal WorkloadHours { get; set; }
 
         public int AllocationPercent { get; set; }
+
     }
 }

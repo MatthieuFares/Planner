@@ -60,6 +60,9 @@ namespace PlannerAPI.Controllers
                 LateStart = t.LateStart,
                 LateFinish = t.LateFinish,
                 TotalFloat = t.TotalFloat,
+                Deadline = t.Deadline,
+                DelayDays = t.DelayDays,
+                IsLate = t.IsLate,
 
                 ResourceAssignments = t.ResourceAssignments
                     .OrderBy(ra => ra.Resource?.Name ?? ra.ResourceGroup?.Name ?? string.Empty)
@@ -160,6 +163,9 @@ namespace PlannerAPI.Controllers
                 LateStart = task.LateStart,
                 LateFinish = task.LateFinish,
                 TotalFloat = task.TotalFloat,
+                Deadline = task.Deadline,
+                DelayDays = task.DelayDays,
+                IsLate = task.IsLate,
 
                 ResourceAssignments = task.ResourceAssignments
                     .OrderBy(ra => ra.Resource?.Name ?? ra.ResourceGroup?.Name ?? string.Empty)
