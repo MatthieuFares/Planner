@@ -67,6 +67,24 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     });
   }
 
+  int _getNextSortOrder({
+    required List<StructuredGanttItem> items,
+    required int? parentId,
+  }) {
+    final siblings = items.where((item) => item.parentId == parentId).toList();
+
+    if (siblings.isEmpty) {
+      return 1;
+    }
+
+    return siblings.fold<int>(
+          0,
+          (maxSortOrder, item) =>
+              item.sortOrder > maxSortOrder ? item.sortOrder : maxSortOrder,
+        ) +
+        1;
+  }
+
   Future<void> _syncTasks() async {
     try {
       await _ganttApi.syncProjectTasks(widget.projectId);
@@ -91,6 +109,161 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
         ),
       );
     }
+  }
+
+  Future<void> _createPlanningItem(List<StructuredGanttItem> items) async {
+    final nameController = TextEditingController();
+    final possibleParents = items
+        .where((item) => item.type == 'Section' || item.type == 'Zone')
+        .toList();
+
+    String selectedType = 'Section';
+    StructuredGanttItem? selectedParent;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final isZone = selectedType == 'Zone';
+
+            return AlertDialog(
+              title: const Text('Ajouter au Gantt'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: selectedType,
+                      decoration: const InputDecoration(
+                        labelText: 'Type',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'Section',
+                          child: Text('Section'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Zone',
+                          child: Text('Zone'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+
+                        setDialogState(() {
+                          selectedType = value;
+                          if (selectedType == 'Section') {
+                            selectedParent = null;
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nom',
+                        hintText: 'Ex : Gros œuvre, Bâtiment A, Phase recette...',
+                        border: OutlineInputBorder(),
+                      ),
+                      autofocus: true,
+                    ),
+                    if (isZone) ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<StructuredGanttItem>(
+                        value: selectedParent,
+                        decoration: const InputDecoration(
+                          labelText: 'Parent',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: possibleParents.map((parent) {
+                          return DropdownMenuItem(
+                            value: parent,
+                            child: Text('${parent.wbsCode} - ${parent.name}'),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            selectedParent = value;
+                          });
+                        },
+                      ),
+                      if (possibleParents.isEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Crée d’abord une Section avant d’ajouter une Zone.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.red,
+                              ),
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final name = nameController.text.trim();
+
+                    if (name.isEmpty) return;
+                    if (isZone && selectedParent == null) return;
+
+                    final parentId = isZone ? selectedParent!.id : null;
+                    final sortOrder = _getNextSortOrder(
+                      items: items,
+                      parentId: parentId,
+                    );
+
+                    Navigator.of(context).pop();
+
+                    try {
+                      await _ganttApi.createPlanningItem(
+                        projectId: widget.projectId,
+                        name: name,
+                        type: selectedType,
+                        parentId: parentId,
+                        sortOrder: sortOrder,
+                      );
+
+                      setState(() {
+                        _loadGantt();
+                      });
+
+                      if (!mounted) return;
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('$selectedType ajoutée au Gantt.'),
+                        ),
+                      );
+                    } catch (error) {
+                      if (!mounted) return;
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Erreur création : $error'),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Ajouter'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    nameController.dispose();
   }
 
   Future<void> _moveItem({
@@ -206,6 +379,12 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
               children: [
                 const Text('Aucun élément à afficher dans le Gantt.'),
                 const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: () => _createPlanningItem(data.items),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Ajouter une section'),
+                ),
+                const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: _syncTasks,
                   icon: const Icon(Icons.sync),
@@ -223,6 +402,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
           onDisplayModeChanged: _changeDisplayMode,
           onRefresh: _refreshGantt,
           onSyncTasks: _syncTasks,
+          onCreateItem: _createPlanningItem,
           onMoveItem: _moveItem,
           onZoomIn: _zoomIn,
           onZoomOut: _zoomOut,
@@ -239,6 +419,7 @@ class _StructuredGanttChart extends StatefulWidget {
   final ValueChanged<StructuredGanttDisplayMode?> onDisplayModeChanged;
   final VoidCallback onRefresh;
   final Future<void> Function() onSyncTasks;
+  final Future<void> Function(List<StructuredGanttItem> items) onCreateItem;
   final Future<void> Function({
     required StructuredGanttItem item,
     required List<StructuredGanttItem> possibleParents,
@@ -253,6 +434,7 @@ class _StructuredGanttChart extends StatefulWidget {
     required this.onDisplayModeChanged,
     required this.onRefresh,
     required this.onSyncTasks,
+    required this.onCreateItem,
     required this.onMoveItem,
     required this.onZoomIn,
     required this.onZoomOut,
@@ -403,6 +585,12 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const Spacer(),
+                FilledButton.icon(
+                  onPressed: () => widget.onCreateItem(items),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Ajouter'),
+                ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: () {
                     widget.onSyncTasks();
@@ -498,6 +686,12 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                 onPressed: widget.onZoomIn,
                 icon: const Icon(Icons.zoom_in),
                 label: const Text('Zoom +'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: () => widget.onCreateItem(items),
+                icon: const Icon(Icons.add),
+                label: const Text('Ajouter'),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(

@@ -15,6 +15,7 @@ class StructuredGanttApi {
       '/PlanningItems/project/$projectId/sync-tasks',
     );
   }
+
   Future<void> movePlanningItem({
     required int itemId,
     required int newParentId,
@@ -23,6 +24,26 @@ class StructuredGanttApi {
       '/PlanningItems/$itemId/move',
       data: {
         'newParentId': newParentId,
+      },
+    );
+  }
+
+  Future<void> createPlanningItem({
+    required int projectId,
+    required String name,
+    required String type,
+    required int sortOrder,
+    int? parentId,
+  }) async {
+    await ApiClient.dio.post(
+      '/PlanningItems',
+      data: {
+        'projectId': projectId,
+        'parentId': parentId,
+        'name': name,
+        'type': type,
+        'sortOrder': sortOrder,
+        'taskId': null,
       },
     );
   }
