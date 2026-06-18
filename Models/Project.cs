@@ -24,5 +24,6 @@ namespace PlannerAPI.Models
         public DateTime? EndDate { get; set; }
 
         public List<PlannerTask> Tasks { get; set; } = new();
+        public ProjectCalendar? Calendar { get; set; }
     }
 }

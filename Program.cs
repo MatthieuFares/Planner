@@ -18,6 +18,7 @@ builder.Services.AddScoped<IResourceGroupService, ResourceGroupService>();
 builder.Services.AddScoped<IProjectSummaryService, ProjectSummaryService>();
 builder.Services.AddScoped<IProjectWarningService, ProjectWarningService>();
 builder.Services.AddScoped<IPlanningItemService, PlanningItemService>();
+builder.Services.AddScoped<IProjectCalendarService, ProjectCalendarService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 

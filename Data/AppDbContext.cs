@@ -17,6 +17,7 @@ namespace PlannerAPI.Data
         public DbSet<ResourceGroup> ResourceGroups { get; set; }
         public DbSet<ResourceGroupMember> ResourceGroupMembers { get; set; }
         public DbSet<PlanningItem> PlanningItems { get; set; }
+        public DbSet<ProjectCalendar> ProjectCalendars { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -114,6 +115,16 @@ namespace PlannerAPI.Data
                 .HasIndex(pi => pi.TaskId)
                 .IsUnique()
                 .HasFilter("[TaskId] IS NOT NULL");
+
+            modelBuilder.Entity<ProjectCalendar>()
+                .HasOne(c => c.Project)
+                .WithOne(p => p.Calendar)
+                .HasForeignKey<ProjectCalendar>(c => c.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ProjectCalendar>()
+                .HasIndex(c => c.ProjectId)
+                .IsUnique();
         }
     }
 }
