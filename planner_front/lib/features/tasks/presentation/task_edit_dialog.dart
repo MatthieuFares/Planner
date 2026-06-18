@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/utils/working_day_utils.dart';
 
 import '../data/task_model.dart';
 
@@ -51,7 +52,7 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
   }
 
   DateTime _computeEndDate(DateTime startDate, int duration) {
-    return startDate.add(Duration(days: duration));
+    return WorkingDayUtils.addWorkingDays(startDate, duration);
   }
 
   Future<void> _pickStartDate() async {

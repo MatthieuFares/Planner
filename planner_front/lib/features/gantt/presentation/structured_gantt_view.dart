@@ -11,6 +11,14 @@ enum StructuredGanttDisplayMode {
   year,
 }
 
+DateTime _dateOnly(DateTime date) {
+  return DateTime(date.year, date.month, date.day);
+}
+
+int _calendarDaysBetween(DateTime start, DateTime end) {
+  return _dateOnly(end).difference(_dateOnly(start)).inDays;
+}
+
 class StructuredGanttView extends StatefulWidget {
   final int projectId;
 
@@ -514,38 +522,44 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
     required DateTime projectStart,
     required DateTime projectEnd,
   }) {
+    final cleanProjectStart = _dateOnly(projectStart);
+    final cleanProjectEnd = _dateOnly(projectEnd);
+
     switch (widget.displayMode) {
       case StructuredGanttDisplayMode.auto:
-        final rawDays = projectEnd.difference(projectStart).inDays;
+        final rawDays = _calendarDaysBetween(
+          cleanProjectStart,
+          cleanProjectEnd,
+        );
 
         if (rawDays < 14) {
           return (
-            start: projectStart.subtract(const Duration(days: 3)),
-            end: projectStart.add(const Duration(days: 18)),
+            start: cleanProjectStart.subtract(const Duration(days: 3)),
+            end: cleanProjectStart.add(const Duration(days: 18)),
           );
         }
 
         return (
-          start: projectStart.subtract(const Duration(days: 2)),
-          end: projectEnd.add(const Duration(days: 5)),
+          start: cleanProjectStart.subtract(const Duration(days: 2)),
+          end: cleanProjectEnd.add(const Duration(days: 5)),
         );
 
       case StructuredGanttDisplayMode.month:
         return (
-          start: _startOfMonth(projectStart),
-          end: _endOfMonth(projectEnd),
+          start: _startOfMonth(cleanProjectStart),
+          end: _endOfMonth(cleanProjectEnd),
         );
 
       case StructuredGanttDisplayMode.quarter:
         return (
-          start: _startOfQuarter(projectStart),
-          end: _endOfQuarter(projectEnd),
+          start: _startOfQuarter(cleanProjectStart),
+          end: _endOfQuarter(cleanProjectEnd),
         );
 
       case StructuredGanttDisplayMode.year:
         return (
-          start: _startOfYear(projectStart),
-          end: _endOfYear(projectEnd),
+          start: _startOfYear(cleanProjectStart),
+          end: _endOfYear(cleanProjectEnd),
         );
     }
   }
@@ -616,23 +630,27 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
       );
     }
 
-    final projectStart = taskItems
-        .map((item) => item.task!.startDate)
-        .reduce((a, b) => a.isBefore(b) ? a : b);
+    final projectStart = _dateOnly(
+      taskItems
+          .map((item) => item.task!.startDate)
+          .reduce((a, b) => a.isBefore(b) ? a : b),
+    );
 
-    final projectEnd = taskItems
-        .map((item) => item.task!.endDate)
-        .reduce((a, b) => a.isAfter(b) ? a : b);
+    final projectEnd = _dateOnly(
+      taskItems
+          .map((item) => item.task!.endDate)
+          .reduce((a, b) => a.isAfter(b) ? a : b),
+    );
 
     final visibleRange = _getVisibleRange(
       projectStart: projectStart,
       projectEnd: projectEnd,
     );
 
-    final visibleStart = visibleRange.start;
-    final visibleEnd = visibleRange.end;
+    final visibleStart = _dateOnly(visibleRange.start);
+    final visibleEnd = _dateOnly(visibleRange.end);
 
-    final totalDaysRaw = visibleEnd.difference(visibleStart).inDays;
+    final totalDaysRaw = _calendarDaysBetween(visibleStart, visibleEnd);
     final totalDays = totalDaysRaw <= 0 ? 1 : totalDaysRaw;
 
     final chartWidth = (totalDays + 2) * widget.dayWidth;
@@ -1041,7 +1059,7 @@ class _StructuredGanttDateHeader extends StatelessWidget {
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Row(
         children: List.generate(totalDays + 2, (index) {
-          final date = visibleStart.add(Duration(days: index));
+          final date = _dateOnly(visibleStart).add(Duration(days: index));
 
           final showLabel = index == 0 ||
               index == totalDays ||
@@ -1203,15 +1221,19 @@ class _TaskBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final offsetDays = task.startDate.difference(visibleStart).inDays;
-    final rawTaskDays = task.endDate.difference(task.startDate).inDays;
+    final cleanVisibleStart = _dateOnly(visibleStart);
+    final taskStart = _dateOnly(task.startDate);
+    final taskEnd = _dateOnly(task.endDate);
+
+    final offsetDays = _calendarDaysBetween(cleanVisibleStart, taskStart);
+    final rawTaskDays = _calendarDaysBetween(taskStart, taskEnd);
     final taskDays = rawTaskDays <= 0 ? 1 : rawTaskDays;
 
     final left = offsetDays * dayWidth;
     final width = taskDays * dayWidth;
 
     return Positioned(
-      left: left,
+      left: left < 0 ? 0 : left,
       top: 14,
       child: Tooltip(
         message: '${item.name}\n'

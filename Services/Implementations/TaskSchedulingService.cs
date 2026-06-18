@@ -14,57 +14,166 @@ namespace PlannerAPI.Services.Implementations
             _context = context;
         }
 
-        private bool IsWorkingDay(DateTime date)
+        private bool IsWorkingDay(DateTime date, ProjectCalendar calendar)
         {
-            return date.DayOfWeek != DayOfWeek.Saturday &&
-                   date.DayOfWeek != DayOfWeek.Sunday;
+            var normalizedDate = date.Date;
+
+            var exception = calendar.Exceptions?
+                .FirstOrDefault(e => e.Date.Date == normalizedDate);
+
+            if (exception != null)
+                return exception.IsWorkingDay;
+
+            return normalizedDate.DayOfWeek switch
+            {
+                DayOfWeek.Monday => calendar.WorkMonday,
+                DayOfWeek.Tuesday => calendar.WorkTuesday,
+                DayOfWeek.Wednesday => calendar.WorkWednesday,
+                DayOfWeek.Thursday => calendar.WorkThursday,
+                DayOfWeek.Friday => calendar.WorkFriday,
+                DayOfWeek.Saturday => calendar.WorkSaturday,
+                DayOfWeek.Sunday => calendar.WorkSunday,
+                _ => false
+            };
         }
 
-        private DateTime AddWorkingDays(DateTime date, int days)
+        private DateTime NormalizeToWorkingDay(DateTime date, ProjectCalendar calendar, bool forward = true)
         {
-            var currentDate = date;
+            var currentDate = date.Date;
+
+            if (IsWorkingDay(currentDate, calendar))
+                return currentDate;
+
+            // Sécurité anti-boucle infinie si aucun jour ouvré n'est défini dans le calendrier.
+            for (var i = 0; i < 366; i++)
+            {
+                currentDate = currentDate.AddDays(forward ? 1 : -1);
+
+                if (IsWorkingDay(currentDate, calendar))
+                    return currentDate;
+            }
+
+            throw new InvalidOperationException(
+                "Impossible de trouver un jour ouvré dans le calendrier projet. " +
+                "Vérifie qu'au moins un jour de la semaine est ouvré ou qu'une exception ouvrée existe."
+            );
+        }
+
+        private DateTime AddWorkingDays(DateTime date, int days, ProjectCalendar calendar)
+        {
+            if (days < 0)
+                return SubtractWorkingDays(date, Math.Abs(days), calendar);
+
+            if (days == 0)
+                return NormalizeToWorkingDay(date, calendar, forward: true);
+
+            var currentDate = date.Date;
             var remainingDays = days;
 
             while (remainingDays > 0)
             {
                 currentDate = currentDate.AddDays(1);
 
-                if (IsWorkingDay(currentDate))
+                if (IsWorkingDay(currentDate, calendar))
                     remainingDays--;
             }
 
             return currentDate;
         }
 
-        private DateTime SubtractWorkingDays(DateTime date, int days)
+        private DateTime SubtractWorkingDays(DateTime date, int days, ProjectCalendar calendar)
         {
-            var currentDate = date;
+            if (days < 0)
+                return AddWorkingDays(date, Math.Abs(days), calendar);
+
+            if (days == 0)
+                return NormalizeToWorkingDay(date, calendar, forward: false);
+
+            var currentDate = date.Date;
             var remainingDays = days;
 
             while (remainingDays > 0)
             {
                 currentDate = currentDate.AddDays(-1);
 
-                if (IsWorkingDay(currentDate))
+                if (IsWorkingDay(currentDate, calendar))
                     remainingDays--;
             }
 
             return currentDate;
         }
 
-        public async Task RecalculateTaskDatesAsync(int taskId)
+        private DateTime ApplyWorkingDayOffset(DateTime date, int offsetDays, ProjectCalendar calendar)
         {
-            await RecalculateTaskDatesInternalAsync(taskId, new HashSet<int>());
+            if (offsetDays > 0)
+                return AddWorkingDays(date, offsetDays, calendar);
 
-            var task = await _context.Tasks.FirstOrDefaultAsync(t => t.Id == taskId);
+            if (offsetDays < 0)
+                return SubtractWorkingDays(date, Math.Abs(offsetDays), calendar);
 
-            if (task != null)
+            return NormalizeToWorkingDay(date, calendar, forward: true);
+        }
+
+        private int CountWorkingDays(DateTime startDate, DateTime endDate, ProjectCalendar calendar)
+        {
+            var start = startDate.Date;
+            var end = endDate.Date;
+
+            if (start == end)
+                return 0;
+
+            var count = 0;
+
+            if (start < end)
             {
-                await CalculateCriticalPathAsync(task.ProjectId);
+                var currentDate = start;
+
+                while (currentDate < end)
+                {
+                    currentDate = currentDate.AddDays(1);
+
+                    if (IsWorkingDay(currentDate, calendar))
+                        count++;
+                }
+
+                return count;
+            }
+            else
+            {
+                var currentDate = start;
+
+                while (currentDate > end)
+                {
+                    currentDate = currentDate.AddDays(-1);
+
+                    if (IsWorkingDay(currentDate, calendar))
+                        count--;
+                }
+
+                return count;
             }
         }
 
-        private async Task RecalculateTaskDatesInternalAsync(int taskId, HashSet<int> visited)
+        public async Task RecalculateTaskDatesAsync(int taskId)
+        {
+            var initialTask = await _context.Tasks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == taskId);
+
+            if (initialTask == null)
+                return;
+
+            var calendar = await GetOrCreateProjectCalendarForSchedulingAsync(initialTask.ProjectId);
+
+            await RecalculateTaskDatesInternalAsync(taskId, new HashSet<int>(), calendar);
+
+            await CalculateCriticalPathAsync(initialTask.ProjectId);
+        }
+
+        private async Task RecalculateTaskDatesInternalAsync(
+            int taskId,
+            HashSet<int> visited,
+            ProjectCalendar calendar)
         {
             if (!visited.Add(taskId))
                 return;
@@ -95,7 +204,11 @@ namespace PlannerAPI.Services.Implementations
                         {
                             latestStartConstraint = MaxDate(
                                 latestStartConstraint,
-                                predecessor.EndDate.Value.AddDays(dependency.OffsetDays)
+                                ApplyWorkingDayOffset(
+                                    predecessor.EndDate.Value,
+                                    dependency.OffsetDays,
+                                    calendar
+                                )
                             );
                         }
                         break;
@@ -105,7 +218,11 @@ namespace PlannerAPI.Services.Implementations
                         {
                             latestStartConstraint = MaxDate(
                                 latestStartConstraint,
-                                predecessor.StartDate.Value.AddDays(dependency.OffsetDays)
+                                ApplyWorkingDayOffset(
+                                    predecessor.StartDate.Value,
+                                    dependency.OffsetDays,
+                                    calendar
+                                )
                             );
                         }
                         break;
@@ -115,7 +232,11 @@ namespace PlannerAPI.Services.Implementations
                         {
                             latestEndConstraint = MaxDate(
                                 latestEndConstraint,
-                                predecessor.EndDate.Value.AddDays(dependency.OffsetDays)
+                                ApplyWorkingDayOffset(
+                                    predecessor.EndDate.Value,
+                                    dependency.OffsetDays,
+                                    calendar
+                                )
                             );
                         }
                         break;
@@ -125,14 +246,18 @@ namespace PlannerAPI.Services.Implementations
                         {
                             latestEndConstraint = MaxDate(
                                 latestEndConstraint,
-                                predecessor.StartDate.Value.AddDays(dependency.OffsetDays)
+                                ApplyWorkingDayOffset(
+                                    predecessor.StartDate.Value,
+                                    dependency.OffsetDays,
+                                    calendar
+                                )
                             );
                         }
                         break;
                 }
             }
 
-            ApplySchedulingRules(task, latestStartConstraint, latestEndConstraint);
+            ApplySchedulingRules(task, latestStartConstraint, latestEndConstraint, calendar);
 
             await _context.SaveChangesAsync();
 
@@ -143,14 +268,15 @@ namespace PlannerAPI.Services.Implementations
 
             foreach (var successorId in successorIds)
             {
-                await RecalculateTaskDatesInternalAsync(successorId, visited);
+                await RecalculateTaskDatesInternalAsync(successorId, visited, calendar);
             }
         }
 
         private void ApplySchedulingRules(
             PlannerTask task,
             DateTime? latestStartConstraint,
-            DateTime? latestEndConstraint)
+            DateTime? latestEndConstraint,
+            ProjectCalendar calendar)
         {
             if (!task.Duration.HasValue)
                 return;
@@ -159,9 +285,21 @@ namespace PlannerAPI.Services.Implementations
 
             if (latestStartConstraint.HasValue && latestEndConstraint.HasValue)
             {
-                var expectedEnd = AddWorkingDays(latestStartConstraint.Value, duration);
+                var startConstraint = NormalizeToWorkingDay(
+                    latestStartConstraint.Value,
+                    calendar,
+                    forward: true
+                );
 
-                if (expectedEnd > latestEndConstraint.Value)
+                var endConstraint = NormalizeToWorkingDay(
+                    latestEndConstraint.Value,
+                    calendar,
+                    forward: false
+                );
+
+                var expectedEnd = AddWorkingDays(startConstraint, duration, calendar);
+
+                if (expectedEnd > endConstraint)
                 {
                     throw new InvalidOperationException(
                         $"Conflit de planification pour la tâche {task.Id} : " +
@@ -169,32 +307,54 @@ namespace PlannerAPI.Services.Implementations
                     );
                 }
 
-                task.StartDate = latestStartConstraint.Value;
-                task.EndDate = AddWorkingDays(task.StartDate.Value, duration);
+                task.StartDate = startConstraint;
+                task.EndDate = AddWorkingDays(task.StartDate.Value, duration, calendar);
                 return;
             }
 
             if (latestStartConstraint.HasValue)
             {
-                task.StartDate = latestStartConstraint.Value;
-                task.EndDate = AddWorkingDays(task.StartDate.Value, duration);
+                task.StartDate = NormalizeToWorkingDay(
+                    latestStartConstraint.Value,
+                    calendar,
+                    forward: true
+                );
+
+                task.EndDate = AddWorkingDays(task.StartDate.Value, duration, calendar);
                 return;
             }
 
             if (latestEndConstraint.HasValue)
             {
-                task.EndDate = latestEndConstraint.Value;
-                task.StartDate = SubtractWorkingDays(task.EndDate.Value, duration);
+                task.EndDate = NormalizeToWorkingDay(
+                    latestEndConstraint.Value,
+                    calendar,
+                    forward: false
+                );
+
+                task.StartDate = SubtractWorkingDays(task.EndDate.Value, duration, calendar);
                 return;
             }
 
             if (task.StartDate.HasValue)
             {
-                task.EndDate = AddWorkingDays(task.StartDate.Value, duration);
+                task.StartDate = NormalizeToWorkingDay(
+                    task.StartDate.Value,
+                    calendar,
+                    forward: true
+                );
+
+                task.EndDate = AddWorkingDays(task.StartDate.Value, duration, calendar);
             }
             else if (task.EndDate.HasValue)
             {
-                task.StartDate = SubtractWorkingDays(task.EndDate.Value, duration);
+                task.EndDate = NormalizeToWorkingDay(
+                    task.EndDate.Value,
+                    calendar,
+                    forward: false
+                );
+
+                task.StartDate = SubtractWorkingDays(task.EndDate.Value, duration, calendar);
             }
         }
 
@@ -226,6 +386,8 @@ namespace PlannerAPI.Services.Implementations
             if (!tasks.Any())
                 return;
 
+            var calendar = await GetOrCreateProjectCalendarForSchedulingAsync(projectId);
+
             foreach (var task in tasks)
             {
                 task.EarlyStart = task.StartDate;
@@ -252,13 +414,18 @@ namespace PlannerAPI.Services.Implementations
 
             foreach (var task in endTasks)
             {
-                task.LateFinish = projectEndDate.Value;
+                task.LateFinish = NormalizeToWorkingDay(
+                    projectEndDate.Value,
+                    calendar,
+                    forward: false
+                );
 
                 if (task.Duration.HasValue)
                 {
                     task.LateStart = SubtractWorkingDays(
                         task.LateFinish.Value,
-                        task.Duration.Value
+                        task.Duration.Value,
+                        calendar
                     );
                 }
             }
@@ -288,7 +455,12 @@ namespace PlannerAPI.Services.Implementations
                         case "FS":
                             if (successor.LateStart.HasValue)
                             {
-                                var candidate = successor.LateStart.Value.AddDays(-dependency.OffsetDays);
+                                var candidate = ApplyWorkingDayOffset(
+                                    successor.LateStart.Value,
+                                    -dependency.OffsetDays,
+                                    calendar
+                                );
+
                                 candidateLateFinish = MinDate(candidateLateFinish, candidate);
                             }
                             break;
@@ -296,7 +468,12 @@ namespace PlannerAPI.Services.Implementations
                         case "SS":
                             if (successor.LateStart.HasValue)
                             {
-                                var candidate = successor.LateStart.Value.AddDays(-dependency.OffsetDays);
+                                var candidate = ApplyWorkingDayOffset(
+                                    successor.LateStart.Value,
+                                    -dependency.OffsetDays,
+                                    calendar
+                                );
+
                                 candidateLateStart = MinDate(candidateLateStart, candidate);
                             }
                             break;
@@ -304,7 +481,12 @@ namespace PlannerAPI.Services.Implementations
                         case "FF":
                             if (successor.LateFinish.HasValue)
                             {
-                                var candidate = successor.LateFinish.Value.AddDays(-dependency.OffsetDays);
+                                var candidate = ApplyWorkingDayOffset(
+                                    successor.LateFinish.Value,
+                                    -dependency.OffsetDays,
+                                    calendar
+                                );
+
                                 candidateLateFinish = MinDate(candidateLateFinish, candidate);
                             }
                             break;
@@ -312,7 +494,12 @@ namespace PlannerAPI.Services.Implementations
                         case "SF":
                             if (successor.LateFinish.HasValue)
                             {
-                                var candidate = successor.LateFinish.Value.AddDays(-dependency.OffsetDays);
+                                var candidate = ApplyWorkingDayOffset(
+                                    successor.LateFinish.Value,
+                                    -dependency.OffsetDays,
+                                    calendar
+                                );
+
                                 candidateLateStart = MinDate(candidateLateStart, candidate);
                             }
                             break;
@@ -323,25 +510,42 @@ namespace PlannerAPI.Services.Implementations
                 {
                     if (candidateLateFinish.HasValue)
                     {
-                        task.LateFinish = candidateLateFinish.Value;
+                        task.LateFinish = NormalizeToWorkingDay(
+                            candidateLateFinish.Value,
+                            calendar,
+                            forward: false
+                        );
+
                         task.LateStart = SubtractWorkingDays(
                             task.LateFinish.Value,
-                            task.Duration.Value
+                            task.Duration.Value,
+                            calendar
                         );
                     }
                     else if (candidateLateStart.HasValue)
                     {
-                        task.LateStart = candidateLateStart.Value;
+                        task.LateStart = NormalizeToWorkingDay(
+                            candidateLateStart.Value,
+                            calendar,
+                            forward: true
+                        );
+
                         task.LateFinish = AddWorkingDays(
                             task.LateStart.Value,
-                            task.Duration.Value
+                            task.Duration.Value,
+                            calendar
                         );
                     }
                 }
 
                 if (task.EarlyStart.HasValue && task.LateStart.HasValue)
                 {
-                    task.TotalFloat = (task.LateStart.Value - task.EarlyStart.Value).Days;
+                    task.TotalFloat = CountWorkingDays(
+                        task.EarlyStart.Value,
+                        task.LateStart.Value,
+                        calendar
+                    );
+
                     task.IsCritical = task.TotalFloat == 0;
                 }
             }
@@ -350,7 +554,12 @@ namespace PlannerAPI.Services.Implementations
             {
                 if (task.EarlyStart.HasValue && task.LateStart.HasValue)
                 {
-                    task.TotalFloat = (task.LateStart.Value - task.EarlyStart.Value).Days;
+                    task.TotalFloat = CountWorkingDays(
+                        task.EarlyStart.Value,
+                        task.LateStart.Value,
+                        calendar
+                    );
+
                     task.IsCritical = task.TotalFloat == 0;
                 }
             }
@@ -358,13 +567,13 @@ namespace PlannerAPI.Services.Implementations
             // Deadline / retard / float négatif
             foreach (var task in tasks)
             {
-                ApplyDeadlineStatus(task);
+                ApplyDeadlineStatus(task, calendar);
             }
 
             await _context.SaveChangesAsync();
         }
 
-        private static void ApplyDeadlineStatus(PlannerTask task)
+        private void ApplyDeadlineStatus(PlannerTask task, ProjectCalendar calendar)
         {
             if (!task.Deadline.HasValue || !task.EndDate.HasValue)
             {
@@ -373,10 +582,19 @@ namespace PlannerAPI.Services.Implementations
                 return;
             }
 
-            var deadlineDate = task.Deadline.Value.Date;
-            var endDate = task.EndDate.Value.Date;
+            var deadlineDate = NormalizeToWorkingDay(
+                task.Deadline.Value,
+                calendar,
+                forward: false
+            );
 
-            var deadlineFloat = (deadlineDate - endDate).Days;
+            var endDate = NormalizeToWorkingDay(
+                task.EndDate.Value,
+                calendar,
+                forward: false
+            );
+
+            var deadlineFloat = CountWorkingDays(endDate, deadlineDate, calendar);
 
             task.TotalFloat = task.TotalFloat.HasValue
                 ? Math.Min(task.TotalFloat.Value, deadlineFloat)
@@ -384,7 +602,7 @@ namespace PlannerAPI.Services.Implementations
 
             if (deadlineFloat < 0)
             {
-                task.DelayDays = -deadlineFloat;
+                task.DelayDays = Math.Abs(deadlineFloat);
                 task.IsLate = true;
             }
             else
@@ -394,6 +612,33 @@ namespace PlannerAPI.Services.Implementations
             }
 
             task.IsCritical = task.TotalFloat.HasValue && task.TotalFloat.Value <= 0;
+        }
+
+        private async Task<ProjectCalendar> GetOrCreateProjectCalendarForSchedulingAsync(int projectId)
+        {
+            var calendar = await _context.ProjectCalendars
+                .Include(c => c.Exceptions)
+                .FirstOrDefaultAsync(c => c.ProjectId == projectId);
+
+            if (calendar != null)
+                return calendar;
+
+            calendar = new ProjectCalendar
+            {
+                ProjectId = projectId,
+                WorkMonday = true,
+                WorkTuesday = true,
+                WorkWednesday = true,
+                WorkThursday = true,
+                WorkFriday = true,
+                WorkSaturday = false,
+                WorkSunday = false
+            };
+
+            _context.ProjectCalendars.Add(calendar);
+            await _context.SaveChangesAsync();
+
+            return calendar;
         }
     }
 }
