@@ -4,6 +4,11 @@ import 'package:intl/intl.dart';
 import '../data/structured_gantt_api.dart';
 import '../data/structured_gantt_model.dart';
 
+import '../../project_calendar/data/project_calendar_api.dart';
+import '../../project_calendar/data/project_calendar_exception_api.dart';
+import '../../project_calendar/data/project_calendar_exception_model.dart';
+import '../../project_calendar/data/project_calendar_model.dart';
+
 enum StructuredGanttDisplayMode {
   auto,
   month,
@@ -17,6 +22,78 @@ DateTime _dateOnly(DateTime date) {
 
 int _calendarDaysBetween(DateTime start, DateTime end) {
   return _dateOnly(end).difference(_dateOnly(start)).inDays;
+}
+
+const double _ganttHeaderHeight = 92;
+
+bool _isSameDay(DateTime a, DateTime b) {
+  final cleanA = _dateOnly(a);
+  final cleanB = _dateOnly(b);
+
+  return cleanA.year == cleanB.year &&
+      cleanA.month == cleanB.month &&
+      cleanA.day == cleanB.day;
+}
+
+ProjectCalendarExceptionModel? _findExceptionForDate({
+  required DateTime date,
+  required List<ProjectCalendarExceptionModel> exceptions,
+}) {
+  final cleanDate = _dateOnly(date);
+
+  for (final exception in exceptions) {
+    if (_isSameDay(exception.date, cleanDate)) {
+      return exception;
+    }
+  }
+
+  return null;
+}
+
+bool _isWorkingDayForProject({
+  required DateTime date,
+  required ProjectCalendarModel calendar,
+  required List<ProjectCalendarExceptionModel> exceptions,
+}) {
+  final exception = _findExceptionForDate(
+    date: date,
+    exceptions: exceptions,
+  );
+
+  if (exception != null) {
+    return exception.isWorkingDay;
+  }
+
+  switch (_dateOnly(date).weekday) {
+    case DateTime.monday:
+      return calendar.workMonday;
+    case DateTime.tuesday:
+      return calendar.workTuesday;
+    case DateTime.wednesday:
+      return calendar.workWednesday;
+    case DateTime.thursday:
+      return calendar.workThursday;
+    case DateTime.friday:
+      return calendar.workFriday;
+    case DateTime.saturday:
+      return calendar.workSaturday;
+    case DateTime.sunday:
+      return calendar.workSunday;
+    default:
+      return false;
+  }
+}
+
+class _StructuredGanttLoadedData {
+  final StructuredGanttResponse gantt;
+  final ProjectCalendarModel calendar;
+  final List<ProjectCalendarExceptionModel> exceptions;
+
+  const _StructuredGanttLoadedData({
+    required this.gantt,
+    required this.calendar,
+    required this.exceptions,
+  });
 }
 
 class StructuredGanttView extends StatefulWidget {
@@ -33,8 +110,10 @@ class StructuredGanttView extends StatefulWidget {
 
 class _StructuredGanttViewState extends State<StructuredGanttView> {
   final StructuredGanttApi _ganttApi = StructuredGanttApi();
+  final ProjectCalendarApi _calendarApi = ProjectCalendarApi();
+  final ProjectCalendarExceptionApi _exceptionApi = ProjectCalendarExceptionApi();
 
-  late Future<StructuredGanttResponse> _ganttFuture;
+  late Future<_StructuredGanttLoadedData> _ganttFuture;
 
   double _dayWidth = 24;
   StructuredGanttDisplayMode _displayMode = StructuredGanttDisplayMode.auto;
@@ -46,7 +125,19 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   }
 
   void _loadGantt() {
-    _ganttFuture = _ganttApi.getStructuredGantt(widget.projectId);
+    _ganttFuture = _loadGanttData();
+  }
+
+  Future<_StructuredGanttLoadedData> _loadGanttData() async {
+    final gantt = await _ganttApi.getStructuredGantt(widget.projectId);
+    final calendar = await _calendarApi.getByProjectId(widget.projectId);
+    final exceptions = await _exceptionApi.getByProjectId(widget.projectId);
+
+    return _StructuredGanttLoadedData(
+      gantt: gantt,
+      calendar: calendar,
+      exceptions: exceptions,
+    );
   }
 
   void _zoomIn() {
@@ -355,7 +446,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<StructuredGanttResponse>(
+    return FutureBuilder<_StructuredGanttLoadedData>(
       future: _ganttFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -378,7 +469,8 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
           );
         }
 
-        final data = snapshot.data!;
+        final loadedData = snapshot.data!;
+        final data = loadedData.gantt;
 
         if (data.items.isEmpty) {
           return Center(
@@ -405,6 +497,8 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
 
         return _StructuredGanttChart(
           data: data,
+          calendar: loadedData.calendar,
+          exceptions: loadedData.exceptions,
           dayWidth: _dayWidth,
           displayMode: _displayMode,
           onDisplayModeChanged: _changeDisplayMode,
@@ -422,6 +516,8 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
 
 class _StructuredGanttChart extends StatefulWidget {
   final StructuredGanttResponse data;
+  final ProjectCalendarModel calendar;
+  final List<ProjectCalendarExceptionModel> exceptions;
   final double dayWidth;
   final StructuredGanttDisplayMode displayMode;
   final ValueChanged<StructuredGanttDisplayMode?> onDisplayModeChanged;
@@ -437,6 +533,8 @@ class _StructuredGanttChart extends StatefulWidget {
 
   const _StructuredGanttChart({
     required this.data,
+    required this.calendar,
+    required this.exceptions,
     required this.dayWidth,
     required this.displayMode,
     required this.onDisplayModeChanged,
@@ -736,7 +834,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                 child: Column(
                   children: [
                     Container(
-                      height: 64,
+                      height: _ganttHeaderHeight,
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       color:
@@ -805,6 +903,8 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                                 visibleStart: visibleStart,
                                 totalDays: totalDays,
                                 dayWidth: widget.dayWidth,
+                                calendar: widget.calendar,
+                                exceptions: widget.exceptions,
                               ),
                               Expanded(
                                 child: ListView.builder(
@@ -818,6 +918,8 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                                       visibleStart: visibleStart,
                                       totalDays: totalDays,
                                       dayWidth: widget.dayWidth,
+                                      calendar: widget.calendar,
+                                      exceptions: widget.exceptions,
                                     );
                                   },
                                 ),
@@ -1043,48 +1145,185 @@ class _StructuredGanttDateHeader extends StatelessWidget {
   final DateTime visibleStart;
   final int totalDays;
   final double dayWidth;
+  final ProjectCalendarModel calendar;
+  final List<ProjectCalendarExceptionModel> exceptions;
 
   const _StructuredGanttDateHeader({
     required this.visibleStart,
     required this.totalDays,
     required this.dayWidth,
+    required this.calendar,
+    required this.exceptions,
   });
+
+  String _weekdayLabel(DateTime date) {
+    switch (date.weekday) {
+      case DateTime.monday:
+        return 'L';
+      case DateTime.tuesday:
+        return 'M';
+      case DateTime.wednesday:
+        return 'M';
+      case DateTime.thursday:
+        return 'J';
+      case DateTime.friday:
+        return 'V';
+      case DateTime.saturday:
+        return 'S';
+      case DateTime.sunday:
+        return 'D';
+      default:
+        return '';
+    }
+  }
+
+  String _monthLabel(DateTime date) {
+    return DateFormat('MMM yyyy').format(date);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final formatter = DateFormat('dd/MM');
+    final cleanVisibleStart = _dateOnly(visibleStart);
 
     return Container(
-      height: 64,
+      height: _ganttHeaderHeight,
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Row(
         children: List.generate(totalDays + 2, (index) {
-          final date = _dateOnly(visibleStart).add(Duration(days: index));
+          final date = cleanVisibleStart.add(Duration(days: index));
+          final isWorkingDay = _isWorkingDayForProject(
+            date: date,
+            calendar: calendar,
+            exceptions: exceptions,
+          );
+          final exception = _findExceptionForDate(
+            date: date,
+            exceptions: exceptions,
+          );
 
-          final showLabel = index == 0 ||
-              index == totalDays ||
-              date.day == 1 ||
-              index % 5 == 0;
+          final showMonth = index == 0 || date.day == 1;
+          final isToday = _isSameDay(date, DateTime.now());
 
-          return Container(
-            width: dayWidth,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              border: Border(
-                left: BorderSide(
-                  color: Theme.of(context).dividerColor.withOpacity(0.35),
+          return Tooltip(
+            message: exception == null
+                ? '${DateFormat('EEEE dd/MM/yyyy').format(date)} · ${isWorkingDay ? 'Jour ouvré' : 'Jour non ouvré'}'
+                : '${DateFormat('EEEE dd/MM/yyyy').format(date)} · ${exception.label.isEmpty ? 'Exception calendrier' : exception.label} · ${exception.isWorkingDay ? 'Jour travaillé' : 'Jour non travaillé'}',
+            child: Container(
+              width: dayWidth,
+              decoration: BoxDecoration(
+                color: isWorkingDay
+                    ? null
+                    : Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withOpacity(0.85),
+                border: Border(
+                  left: BorderSide(
+                    color: date.day == 1
+                        ? Theme.of(context).dividerColor.withOpacity(0.9)
+                        : Theme.of(context).dividerColor.withOpacity(0.35),
+                  ),
+                  bottom: BorderSide(
+                    color: Theme.of(context).dividerColor.withOpacity(0.45),
+                  ),
                 ),
               ),
-            ),
-            child: showLabel
-                ? RotatedBox(
-                    quarterTurns: 3,
-                    child: Text(
-                      formatter.format(date),
-                      style: Theme.of(context).textTheme.bodySmall,
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 26,
+                    child: Center(
+                      child: showMonth
+                          ? RotatedBox(
+                              quarterTurns: dayWidth < 22 ? 3 : 0,
+                              child: Text(
+                                _monthLabel(date),
+                                maxLines: 1,
+                                overflow: TextOverflow.clip,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: dayWidth < 22 ? 9 : 10,
+                                    ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
-                  )
-                : const SizedBox.shrink(),
+                  ),
+                  Container(
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isToday
+                          ? Theme.of(context)
+                              .colorScheme
+                              .primaryContainer
+                              .withOpacity(0.65)
+                          : null,
+                      border: Border(
+                        top: BorderSide(
+                          color: Theme.of(context)
+                              .dividerColor
+                              .withOpacity(0.25),
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      '${date.day}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontWeight:
+                                isToday ? FontWeight.bold : FontWeight.normal,
+                            color: isWorkingDay
+                                ? null
+                                : Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.color
+                                    ?.withOpacity(0.55),
+                          ),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 30,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _weekdayLabel(date),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: isWorkingDay
+                                      ? null
+                                      : Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.color
+                                          ?.withOpacity(0.55),
+                                ),
+                          ),
+                          if (exception != null)
+                            Icon(
+                              exception.isWorkingDay
+                                  ? Icons.work_outline
+                                  : Icons.block,
+                              size: 10,
+                              color: exception.isWorkingDay
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.red,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         }),
       ),
@@ -1097,17 +1336,22 @@ class _StructuredGanttBarRow extends StatelessWidget {
   final DateTime visibleStart;
   final int totalDays;
   final double dayWidth;
+  final ProjectCalendarModel calendar;
+  final List<ProjectCalendarExceptionModel> exceptions;
 
   const _StructuredGanttBarRow({
     required this.item,
     required this.visibleStart,
     required this.totalDays,
     required this.dayWidth,
+    required this.calendar,
+    required this.exceptions,
   });
 
   @override
   Widget build(BuildContext context) {
     final task = item.task;
+    final cleanVisibleStart = _dateOnly(visibleStart);
 
     return Container(
       height: 64,
@@ -1133,11 +1377,32 @@ class _StructuredGanttBarRow extends StatelessWidget {
         children: [
           Row(
             children: List.generate(totalDays + 2, (index) {
-              final isMajor = index % 5 == 0;
+              final date = cleanVisibleStart.add(Duration(days: index));
+              final isMajor = index % 5 == 0 || date.day == 1;
+              final isWorkingDay = _isWorkingDayForProject(
+                date: date,
+                calendar: calendar,
+                exceptions: exceptions,
+              );
+              final exception = _findExceptionForDate(
+                date: date,
+                exceptions: exceptions,
+              );
 
               return Container(
                 width: dayWidth,
                 decoration: BoxDecoration(
+                  color: !isWorkingDay
+                      ? Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withOpacity(0.55)
+                      : exception != null
+                          ? Theme.of(context)
+                              .colorScheme
+                              .primaryContainer
+                              .withOpacity(0.20)
+                          : null,
                   border: Border(
                     left: BorderSide(
                       color: isMajor
