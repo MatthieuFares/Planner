@@ -12,6 +12,7 @@ import 'summary_card.dart';
 import 'warnings_panel.dart';
 import '../../resources/presentation/resources_tab.dart';
 import '../../project_calendar/presentation/project_calendar_view.dart';
+import '../../project_baseline/presentation/project_baseline_view.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final int projectId;
@@ -91,6 +92,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         return ProjectCalendarView(projectId: widget.projectId);
 
       case 5:
+        return ProjectBaselineView(projectId: widget.projectId);
+
+      case 6:
         return GanttView(projectId: widget.projectId);
 
       default:
@@ -182,6 +186,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 icon: Icon(Icons.calendar_month_outlined),
                 selectedIcon: Icon(Icons.calendar_month),
                 label: 'Calendrier',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.camera_alt_outlined),
+                selectedIcon: Icon(Icons.camera_alt),
+                label: 'Baselines',
               ),
               NavigationDestination(
                 icon: Icon(Icons.timeline),
