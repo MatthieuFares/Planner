@@ -11,6 +11,7 @@ import 'resource_analysis_card.dart';
 import 'summary_card.dart';
 import 'warnings_panel.dart';
 import '../../resources/presentation/resources_tab.dart';
+import '../../project_calendar/presentation/project_calendar_view.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final int projectId;
@@ -85,8 +86,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
       case 3:
         return ResourcesTab(projectId: widget.projectId);
-
+            
       case 4:
+        return ProjectCalendarView(projectId: widget.projectId);
+
+      case 5:
         return GanttView(projectId: widget.projectId);
 
       default:
@@ -173,6 +177,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               NavigationDestination(
                 icon: Icon(Icons.groups_outlined),
                 label: 'Ressources',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.calendar_month_outlined),
+                selectedIcon: Icon(Icons.calendar_month),
+                label: 'Calendrier',
               ),
               NavigationDestination(
                 icon: Icon(Icons.timeline),

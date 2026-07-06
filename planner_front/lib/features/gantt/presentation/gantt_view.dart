@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'structured_gantt_view.dart';
 
+
 class GanttView extends StatelessWidget {
   final int projectId;
 
