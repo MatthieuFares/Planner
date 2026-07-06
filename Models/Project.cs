@@ -25,5 +25,6 @@ namespace PlannerAPI.Models
 
         public List<PlannerTask> Tasks { get; set; } = new();
         public ProjectCalendar? Calendar { get; set; }
+        public List<ProjectBaseline> Baselines { get; set; } = new();
     }
 }
