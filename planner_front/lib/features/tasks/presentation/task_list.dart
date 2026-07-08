@@ -3,7 +3,14 @@ import 'package:intl/intl.dart';
 
 import '../data/task_api.dart';
 import '../data/task_model.dart';
+
+import '../../dependencies/data/dependency_api.dart';
+import '../../dependencies/data/dependency_model.dart';
+import '../../resources/data/resource_assignment_api.dart';
+import '../../resources/data/resource_assignment_model.dart';
+
 import 'task_form_dialog.dart';
+import 'task_form_result.dart';
 import 'task_edit_dialog.dart';
 
 class TaskList extends StatefulWidget {
@@ -20,6 +27,8 @@ class TaskList extends StatefulWidget {
 
 class _TaskListState extends State<TaskList> {
   final TaskApi _taskApi = TaskApi();
+  final DependencyApi _dependencyApi = DependencyApi();
+  final ResourceAssignmentApi _resourceAssignmentApi = ResourceAssignmentApi();
 
   late Future<List<PlannerTask>> _tasksFuture;
 
@@ -39,24 +48,59 @@ class _TaskListState extends State<TaskList> {
     });
   }
 
+  Future<void> _createTaskRelatedData({
+    required PlannerTask createdTask,
+    required TaskFormResult result,
+  }) async {
+    if (result.hasPredecessor) {
+      await _dependencyApi.createDependency(
+        DependencyCreateRequest(
+          predecessorId: result.predecessorTaskId!,
+          successorId: createdTask.id,
+          type: result.dependencyType,
+          offsetDays: result.offsetDays,
+        ),
+      );
+    }
+
+    if (result.hasAssignment) {
+      await _resourceAssignmentApi.createAssignment(
+        ResourceAssignmentCreateRequest(
+          taskId: createdTask.id,
+          resourceId: result.resourceId,
+          resourceGroupId: null,
+          workloadHours: result.workloadHours!,
+          allocationPercent: result.allocationPercent,
+        ),
+      );
+    }
+  }
+
   Future<void> _openCreateTaskDialog() async {
-    final request = await showDialog<TaskCreateRequest>(
+    final result = await showDialog<TaskFormResult>(
       context: context,
       builder: (context) {
         return TaskFormDialog(projectId: widget.projectId);
       },
     );
 
-    if (request == null) return;
+    if (result == null) return;
 
     try {
-      await _taskApi.createTask(request);
+      final createdTask = await _taskApi.createTask(result.taskRequest);
+
+      await _createTaskRelatedData(
+        createdTask: createdTask,
+        result: result,
+      );
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tâche créée avec succès.'),
+        SnackBar(
+          content: Text(
+            _buildCreateSuccessMessage(result),
+          ),
         ),
       );
 
@@ -71,6 +115,24 @@ class _TaskListState extends State<TaskList> {
         ),
       );
     }
+  }
+
+  String _buildCreateSuccessMessage(TaskFormResult result) {
+    final details = <String>[];
+
+    if (result.hasPredecessor) {
+      details.add('prédécesseur ajouté');
+    }
+
+    if (result.hasAssignment) {
+      details.add('assignation ajoutée');
+    }
+
+    if (details.isEmpty) {
+      return 'Tâche créée avec succès.';
+    }
+
+    return 'Tâche créée avec succès (${details.join(', ')}).';
   }
 
   Future<void> _deleteTask(PlannerTask task) async {
@@ -108,16 +170,16 @@ class _TaskListState extends State<TaskList> {
       );
 
       await _refreshTasks();
-      } catch (error) {
-        if (!mounted) return;
+    } catch (error) {
+      if (!mounted) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_formatTaskDeleteError(error)),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_formatTaskDeleteError(error)),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _openEditTaskDialog(PlannerTask task) async {
@@ -212,8 +274,11 @@ class _TaskListState extends State<TaskList> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                color: task.isDone ? Colors.green.shade700 : null,
-                                decoration: task.isDone ? TextDecoration.lineThrough : null,
+                                color:
+                                    task.isDone ? Colors.green.shade700 : null,
+                                decoration: task.isDone
+                                    ? TextDecoration.lineThrough
+                                    : null,
                               ),
                             ),
                           ),
@@ -231,7 +296,8 @@ class _TaskListState extends State<TaskList> {
                         'Début : ${formatDate(task.startDate)} | '
                         'Fin : ${formatDate(task.endDate)} | '
                         'Durée : ${task.duration ?? '-'}j | '
-                        'Progression : ${task.progressPercent}%',
+                        'Progression : ${task.progressPercent}%'
+                        '${task.deadline == null ? '' : ' | Deadline : ${formatDate(task.deadline)}'}',
                       ),
                       trailing: SizedBox(
                         width: 240,
@@ -243,10 +309,18 @@ class _TaskListState extends State<TaskList> {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  task.isCritical == true ? 'Critique' : 'Non critique',
+                                  task.isLate
+                                      ? 'En retard'
+                                      : task.isCritical == true
+                                          ? 'Critique'
+                                          : 'Non critique',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color: task.isCritical == true ? Colors.red : Colors.grey,
+                                    color: task.isLate
+                                        ? Colors.red
+                                        : task.isCritical == true
+                                            ? Colors.orange.shade800
+                                            : Colors.grey,
                                   ),
                                 ),
                                 Text('Float : ${task.floatValue ?? '-'}'),
@@ -280,8 +354,20 @@ class _TaskListState extends State<TaskList> {
   String _formatTaskDeleteError(Object error) {
     final raw = error.toString();
 
-    if (raw.contains('400') || raw.contains('500')) {
+    if (raw.contains('dépendance') ||
+        raw.contains('dependency') ||
+        raw.contains('Dependency')) {
       return 'Impossible de supprimer cette tâche : elle est liée à une ou plusieurs dépendances. Supprimez d’abord les dépendances associées.';
+    }
+
+    if (raw.contains('assignation') ||
+        raw.contains('ressource') ||
+        raw.contains('ResourceAssignment')) {
+      return 'Impossible de supprimer cette tâche : elle possède une ou plusieurs assignations de ressources. Supprimez d’abord les assignations associées.';
+    }
+
+    if (raw.contains('400') || raw.contains('500')) {
+      return 'Impossible de supprimer cette tâche : elle est encore liée à des données de planning.';
     }
 
     if (raw.contains('404')) {

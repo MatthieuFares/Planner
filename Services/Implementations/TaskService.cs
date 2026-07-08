@@ -158,11 +158,58 @@ namespace PlannerAPI.Services.Implementations
                 throw new InvalidOperationException(
                     "Impossible de supprimer cette tâche car elle possède une ou plusieurs assignations de ressources.");
 
+            var projectId = taskItem.ProjectId;
+
+            var linkedPlanningItems = await _context.PlanningItems
+                .Where(i => i.TaskId == id)
+                .ToListAsync();
+
+            if (linkedPlanningItems.Any())
+            {
+                _context.PlanningItems.RemoveRange(linkedPlanningItems);
+            }
+
             _context.Tasks.Remove(taskItem);
 
             await _context.SaveChangesAsync();
 
+            await RecalculateProjectWbsCodesAsync(projectId);
+
             return true;
+        }
+
+        private async Task RecalculateProjectWbsCodesAsync(int projectId)
+        {
+            var items = await _context.PlanningItems
+                .Where(i => i.ProjectId == projectId)
+                .ToListAsync();
+
+            ApplyWbsCodes(items, parentId: null, prefix: string.Empty);
+
+            await _context.SaveChangesAsync();
+        }
+
+        private static void ApplyWbsCodes(
+            List<PlanningItem> items,
+            int? parentId,
+            string prefix)
+        {
+            var children = items
+                .Where(i => i.ParentId == parentId)
+                .OrderBy(i => i.SortOrder)
+                .ThenBy(i => i.Id)
+                .ToList();
+
+            for (var index = 0; index < children.Count; index++)
+            {
+                var child = children[index];
+
+                child.WbsCode = string.IsNullOrWhiteSpace(prefix)
+                    ? $"{index + 1}"
+                    : $"{prefix}.{index + 1}";
+
+                ApplyWbsCodes(items, child.Id, child.WbsCode);
+            }
         }
 
         private static int NormalizeProgress(int progressPercent)

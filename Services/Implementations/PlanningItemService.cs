@@ -193,6 +193,184 @@ namespace PlannerAPI.Services.Implementations
             return true;
         }
 
+        public async Task<PlanningItemSyncResultDto> SyncProjectTasksAsync(int projectId)
+        {
+            var projectExists = await _context.Projects
+                .AnyAsync(p => p.Id == projectId);
+
+            if (!projectExists)
+                throw new InvalidOperationException($"Projet avec l'id {projectId} introuvable.");
+
+            var projectTaskIds = await _context.Tasks
+                .Where(t => t.ProjectId == projectId)
+                .Select(t => t.Id)
+                .ToListAsync();
+
+            var orphanTaskItems = await _context.PlanningItems
+                .Where(i =>
+                    i.ProjectId == projectId &&
+                    i.Type == PlanningItemType.Task &&
+                    (
+                        !i.TaskId.HasValue ||
+                        !projectTaskIds.Contains(i.TaskId.Value)
+                    ))
+                .ToListAsync();
+
+            var deletedOrphanItems = orphanTaskItems.Count;
+
+            if (orphanTaskItems.Any())
+            {
+                _context.PlanningItems.RemoveRange(orphanTaskItems);
+                await _context.SaveChangesAsync();
+            }
+
+            var existingTaskIds = await _context.PlanningItems
+                .Where(i =>
+                    i.ProjectId == projectId &&
+                    i.Type == PlanningItemType.Task &&
+                    i.TaskId.HasValue)
+                .Select(i => i.TaskId!.Value)
+                .ToListAsync();
+
+            var tasksToSync = await _context.Tasks
+                .Where(t => t.ProjectId == projectId && !existingTaskIds.Contains(t.Id))
+                .OrderBy(t => t.StartDate)
+                .ThenBy(t => t.Id)
+                .ToListAsync();
+
+            if (!tasksToSync.Any())
+            {
+                await RecalculateProjectWbsCodesAsync(projectId);
+
+                return new PlanningItemSyncResultDto
+                {
+                    Message = deletedOrphanItems > 0
+                        ? $"Synchronisation terminée. {deletedOrphanItems} élément(s) orphelin(s) supprimé(s)."
+                        : "Aucune tâche à synchroniser.",
+                    CreatedItems = 0
+                };
+            }
+
+            var unclassifiedSection = await _context.PlanningItems
+                .FirstOrDefaultAsync(i =>
+                    i.ProjectId == projectId &&
+                    i.ParentId == null &&
+                    i.Name == "Tâches non classées");
+
+            if (unclassifiedSection == null)
+            {
+                var nextRootSortOrder = await _context.PlanningItems
+                    .Where(i => i.ProjectId == projectId && i.ParentId == null)
+                    .Select(i => (int?)i.SortOrder)
+                    .MaxAsync() ?? 0;
+
+                nextRootSortOrder++;
+
+                unclassifiedSection = new PlanningItem
+                {
+                    ProjectId = projectId,
+                    ParentId = null,
+                    Name = "Tâches non classées",
+                    Type = PlanningItemType.Section,
+                    SortOrder = nextRootSortOrder,
+                    WbsCode = nextRootSortOrder.ToString(),
+                    TaskId = null
+                };
+
+                _context.PlanningItems.Add(unclassifiedSection);
+                await _context.SaveChangesAsync();
+            }
+
+            var nextChildSortOrder = await _context.PlanningItems
+                .Where(i => i.ProjectId == projectId && i.ParentId == unclassifiedSection.Id)
+                .Select(i => (int?)i.SortOrder)
+                .MaxAsync() ?? 0;
+
+            foreach (var task in tasksToSync)
+            {
+                nextChildSortOrder++;
+
+                var item = new PlanningItem
+                {
+                    ProjectId = projectId,
+                    ParentId = unclassifiedSection.Id,
+                    Name = task.Title,
+                    Type = PlanningItemType.Task,
+                    SortOrder = nextChildSortOrder,
+                    WbsCode = $"{unclassifiedSection.WbsCode}.{nextChildSortOrder}",
+                    TaskId = task.Id
+                };
+
+                _context.PlanningItems.Add(item);
+            }
+
+            await _context.SaveChangesAsync();
+
+            await RecalculateProjectWbsCodesAsync(projectId);
+
+            return new PlanningItemSyncResultDto
+            {
+                Message = deletedOrphanItems > 0
+                    ? $"Synchronisation terminée. {tasksToSync.Count} tâche(s) créée(s), {deletedOrphanItems} élément(s) orphelin(s) supprimé(s)."
+                    : $"Synchronisation terminée. {tasksToSync.Count} tâche(s) créée(s).",
+                CreatedItems = tasksToSync.Count
+            };
+        }
+
+        public async Task<PlanningItemReadDto?> MoveAsync(int id, PlanningItemMoveDto dto)
+        {
+            var item = await _context.PlanningItems
+                .FirstOrDefaultAsync(i => i.Id == id);
+
+            if (item == null)
+                return null;
+
+            if (item.Type != PlanningItemType.Task)
+                throw new InvalidOperationException("Seules les tâches peuvent être déplacées pour le moment.");
+
+            var newParent = await _context.PlanningItems
+                .FirstOrDefaultAsync(i => i.Id == dto.NewParentId);
+
+            if (newParent == null)
+                throw new InvalidOperationException($"Parent cible avec l'id {dto.NewParentId} introuvable.");
+
+            if (newParent.ProjectId != item.ProjectId)
+                throw new InvalidOperationException("Impossible de déplacer un élément vers un autre projet.");
+
+            if (newParent.Type != PlanningItemType.Section &&
+                newParent.Type != PlanningItemType.Zone)
+                throw new InvalidOperationException("Le parent cible doit être une Section ou une Zone.");
+
+            var nextSortOrder = await _context.PlanningItems
+                .Where(i => i.ProjectId == item.ProjectId && i.ParentId == newParent.Id)
+                .Select(i => (int?)i.SortOrder)
+                .MaxAsync() ?? 0;
+
+            nextSortOrder++;
+
+            item.ParentId = newParent.Id;
+            item.SortOrder = nextSortOrder;
+
+            await _context.SaveChangesAsync();
+
+            await RecalculateProjectWbsCodesAsync(item.ProjectId);
+
+            var updatedItem = await _context.PlanningItems
+                .AsNoTracking()
+                .Include(i => i.Task)
+                .FirstOrDefaultAsync(i => i.Id == id);
+
+            if (updatedItem == null)
+                return null;
+
+            var projectItems = await _context.PlanningItems
+                .AsNoTracking()
+                .Where(i => i.ProjectId == updatedItem.ProjectId)
+                .ToListAsync();
+
+            return MapToReadDto(updatedItem, projectItems);
+        }
+
         private async Task ValidateReferencesAsync(
             int projectId,
             int? parentId,
@@ -421,148 +599,6 @@ namespace PlannerAPI.Services.Implementations
             }
 
             return level;
-        }
-
-        public async Task<PlanningItemSyncResultDto> SyncProjectTasksAsync(int projectId)
-        {
-            var projectExists = await _context.Projects
-                .AnyAsync(p => p.Id == projectId);
-
-            if (!projectExists)
-                throw new InvalidOperationException($"Projet avec l'id {projectId} introuvable.");
-
-            var existingTaskIds = await _context.PlanningItems
-                .Where(i => i.ProjectId == projectId && i.TaskId != null)
-                .Select(i => i.TaskId!.Value)
-                .ToListAsync();
-
-            var tasksToSync = await _context.Tasks
-                .Where(t => t.ProjectId == projectId && !existingTaskIds.Contains(t.Id))
-                .OrderBy(t => t.StartDate)
-                .ThenBy(t => t.Id)
-                .ToListAsync();
-
-            if (!tasksToSync.Any())
-            {
-                return new PlanningItemSyncResultDto
-                {
-                    Message = "Aucune tâche à synchroniser.",
-                    CreatedItems = 0
-                };
-            }
-
-            var unclassifiedSection = await _context.PlanningItems
-                .FirstOrDefaultAsync(i =>
-                    i.ProjectId == projectId &&
-                    i.ParentId == null &&
-                    i.Name == "Tâches non classées");
-
-            if (unclassifiedSection == null)
-            {
-                var nextRootSortOrder = await _context.PlanningItems
-                    .Where(i => i.ProjectId == projectId && i.ParentId == null)
-                    .Select(i => (int?)i.SortOrder)
-                    .MaxAsync() ?? 0;
-
-                nextRootSortOrder++;
-
-                unclassifiedSection = new PlanningItem
-                {
-                    ProjectId = projectId,
-                    ParentId = null,
-                    Name = "Tâches non classées",
-                    Type = PlanningItemType.Section,
-                    SortOrder = nextRootSortOrder,
-                    WbsCode = nextRootSortOrder.ToString(),
-                    TaskId = null
-                };
-
-                _context.PlanningItems.Add(unclassifiedSection);
-                await _context.SaveChangesAsync();
-            }
-
-            var nextChildSortOrder = await _context.PlanningItems
-                .Where(i => i.ProjectId == projectId && i.ParentId == unclassifiedSection.Id)
-                .Select(i => (int?)i.SortOrder)
-                .MaxAsync() ?? 0;
-
-            foreach (var task in tasksToSync)
-            {
-                nextChildSortOrder++;
-
-                var item = new PlanningItem
-                {
-                    ProjectId = projectId,
-                    ParentId = unclassifiedSection.Id,
-                    Name = task.Title,
-                    Type = PlanningItemType.Task,
-                    SortOrder = nextChildSortOrder,
-                    WbsCode = $"{unclassifiedSection.WbsCode}.{nextChildSortOrder}",
-                    TaskId = task.Id
-                };
-
-                _context.PlanningItems.Add(item);
-            }
-
-            await _context.SaveChangesAsync();
-
-            return new PlanningItemSyncResultDto
-            {
-                Message = "Synchronisation terminée.",
-                CreatedItems = tasksToSync.Count
-            };
-        }
-
-        public async Task<PlanningItemReadDto?> MoveAsync(int id, PlanningItemMoveDto dto)
-        {
-            var item = await _context.PlanningItems
-                .FirstOrDefaultAsync(i => i.Id == id);
-
-            if (item == null)
-                return null;
-
-            if (item.Type != PlanningItemType.Task)
-                throw new InvalidOperationException("Seules les tâches peuvent être déplacées pour le moment.");
-
-            var newParent = await _context.PlanningItems
-                .FirstOrDefaultAsync(i => i.Id == dto.NewParentId);
-
-            if (newParent == null)
-                throw new InvalidOperationException($"Parent cible avec l'id {dto.NewParentId} introuvable.");
-
-            if (newParent.ProjectId != item.ProjectId)
-                throw new InvalidOperationException("Impossible de déplacer un élément vers un autre projet.");
-
-            if (newParent.Type != PlanningItemType.Section &&
-                newParent.Type != PlanningItemType.Zone)
-                throw new InvalidOperationException("Le parent cible doit être une Section ou une Zone.");
-
-            var nextSortOrder = await _context.PlanningItems
-                .Where(i => i.ProjectId == item.ProjectId && i.ParentId == newParent.Id)
-                .Select(i => (int?)i.SortOrder)
-                .MaxAsync() ?? 0;
-
-            nextSortOrder++;
-
-            item.ParentId = newParent.Id;
-            item.SortOrder = nextSortOrder;
-            item.WbsCode = $"{newParent.WbsCode}.{nextSortOrder}";
-
-            await _context.SaveChangesAsync();
-
-            var updatedItem = await _context.PlanningItems
-                .AsNoTracking()
-                .FirstOrDefaultAsync(i => i.Id == id);
-
-           if (updatedItem == null)
-                return null;
-
-            var projectItems = await _context.PlanningItems
-                .AsNoTracking()
-                .Where(i => i.ProjectId == updatedItem.ProjectId)
-                .ToListAsync();
-
-            return MapToReadDto(updatedItem, projectItems: projectItems);
         }
     }
 }

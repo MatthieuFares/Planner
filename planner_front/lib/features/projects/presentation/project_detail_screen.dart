@@ -163,6 +163,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             onDestinationSelected: (index) {
               setState(() {
                 _selectedTabIndex = index;
+
+                if (index == 0) {
+                  _loadProject();
+                  _loadInsights();
+                }
               });
             },
             destinations: const [

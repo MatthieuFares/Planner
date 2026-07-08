@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../data/resource_analysis_api.dart';
+import '../data/resource_analysis_model.dart';
 import '../data/resource_api.dart';
 import '../data/resource_model.dart';
+
 import 'resource_form_dialog.dart';
 import 'resource_assignment_tab.dart';
 import 'resource_groups_tab.dart';
@@ -20,8 +23,9 @@ class ResourcesTab extends StatefulWidget {
 
 class _ResourcesTabState extends State<ResourcesTab> {
   final ResourceApi _resourceApi = ResourceApi();
+  final ResourceAnalysisApi _resourceAnalysisApi = ResourceAnalysisApi();
 
-  late Future<List<Resource>> _resourcesFuture;
+  late Future<_ResourcesData> _resourcesFuture;
 
   @override
   void initState() {
@@ -30,7 +34,20 @@ class _ResourcesTabState extends State<ResourcesTab> {
   }
 
   void _loadResources() {
-    _resourcesFuture = _resourceApi.getResources();
+    _resourcesFuture = _fetchResourcesData();
+  }
+
+  Future<_ResourcesData> _fetchResourcesData() async {
+    final resources = await _resourceApi.getResources();
+
+    final analysis = await _resourceAnalysisApi.getProjectAnalysis(
+      widget.projectId,
+    );
+
+    return _ResourcesData(
+      resources: resources,
+      analysis: analysis,
+    );
   }
 
   Future<void> _refresh() async {
@@ -185,6 +202,76 @@ class _ResourcesTabState extends State<ResourcesTab> {
     return 'Erreur lors de la suppression de la ressource.';
   }
 
+  String _formatHours(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+
+    return value.toStringAsFixed(1);
+  }
+
+  String _formatMoney(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+
+    return value.toStringAsFixed(2);
+  }
+
+  String _formatPercent(double? value) {
+    if (value == null) return '-';
+
+    if (value == value.roundToDouble()) {
+      return '${value.toInt()}%';
+    }
+
+    return '${value.toStringAsFixed(1)}%';
+  }
+
+  List<_ResourceFinancialRow> _buildFinancialRows(_ResourcesData data) {
+    final statsByResourceId = {
+      for (final stat in data.analysis.resources) stat.resourceId: stat,
+    };
+
+    final rows = data.resources.map((resource) {
+      final stat = statsByResourceId[resource.id];
+
+      final assignedHours = stat?.assignedHours ?? 0;
+      final capacityHours = resource.capacityHoursPerWeek;
+      final costPerHour = resource.costPerHour;
+      final estimatedCost = assignedHours * costPerHour;
+
+      double? utilizationPercent;
+
+      if (capacityHours > 0) {
+        utilizationPercent = assignedHours / capacityHours * 100;
+      }
+
+      final isOverloaded =
+          utilizationPercent != null && utilizationPercent > 100;
+
+      return _ResourceFinancialRow(
+        resource: resource,
+        assignedHours: assignedHours,
+        capacityHoursPerWeek: capacityHours,
+        costPerHour: costPerHour,
+        estimatedCost: estimatedCost,
+        utilizationPercent: utilizationPercent,
+        isOverloaded: isOverloaded,
+      );
+    }).toList();
+
+    rows.sort((a, b) {
+      final byHours = b.assignedHours.compareTo(a.assignedHours);
+
+      if (byHours != 0) return byHours;
+
+      return a.resource.name.compareTo(b.resource.name);
+    });
+
+    return rows;
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -222,7 +309,7 @@ class _ResourcesTabState extends State<ResourcesTab> {
   }
 
   Widget _buildResourcesList() {
-    return FutureBuilder<List<Resource>>(
+    return FutureBuilder<_ResourcesData>(
       future: _resourcesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -239,7 +326,16 @@ class _ResourcesTabState extends State<ResourcesTab> {
           );
         }
 
-        final resources = snapshot.data ?? [];
+        final data = snapshot.data;
+
+        if (data == null) {
+          return const Center(
+            child: Text('Aucune donnée ressources.'),
+          );
+        }
+
+        final resources = data.resources;
+        final financialRows = _buildFinancialRows(data);
 
         return Column(
           children: [
@@ -267,25 +363,55 @@ class _ResourcesTabState extends State<ResourcesTab> {
               ),
             ),
             Expanded(
-              child: resources.isEmpty
-                  ? const Center(
-                      child: Text('Aucune ressource.'),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  _ResourceFinancialSummary(
+                    resourceCount: resources.length,
+                    totalWorkloadHours: data.analysis.totalWorkloadHours,
+                    estimatedCost: data.analysis.estimatedCost,
+                    overloadedResourceCount: financialRows
+                        .where((row) => row.isOverloaded)
+                        .length,
+                    formatHours: _formatHours,
+                    formatMoney: _formatMoney,
+                  ),
+                  const SizedBox(height: 12),
+                  _ResourceFinancialTable(
+                    rows: financialRows,
+                    formatHours: _formatHours,
+                    formatMoney: _formatMoney,
+                    formatPercent: _formatPercent,
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Liste des ressources',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  if (resources.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(
+                        child: Text('Aucune ressource.'),
+                      ),
                     )
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: resources.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final resource = resources[index];
-
-                        return Card(
+                  else
+                    ...resources.map((resource) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Card(
                           child: ListTile(
-                            leading: const Icon(Icons.person_outline),
+                            leading: Icon(
+                              resource.type.toLowerCase() == 'team'
+                                  ? Icons.groups_outlined
+                                  : Icons.person_outline,
+                            ),
                             title: Text(resource.name),
                             subtitle: Text(
                               'Type : ${resource.type} | '
                               'Capacité : ${resource.capacityHoursPerWeek}h/semaine | '
-                              'Coût : ${resource.costPerHour}€/h',
+                              'Coût : ${_formatMoney(resource.costPerHour)}€/h',
                             ),
                             trailing: SizedBox(
                               width: 104,
@@ -306,13 +432,252 @@ class _ResourcesTabState extends State<ResourcesTab> {
                               ),
                             ),
                           ),
-                        );
-                      },
-                    ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
             ),
           ],
         );
       },
     );
   }
+}
+
+class _ResourceFinancialSummary extends StatelessWidget {
+  final int resourceCount;
+  final double totalWorkloadHours;
+  final double estimatedCost;
+  final int overloadedResourceCount;
+
+  final String Function(double value) formatHours;
+  final String Function(double value) formatMoney;
+
+  const _ResourceFinancialSummary({
+    required this.resourceCount,
+    required this.totalWorkloadHours,
+    required this.estimatedCost,
+    required this.overloadedResourceCount,
+    required this.formatHours,
+    required this.formatMoney,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Analyse financière des ressources',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _ResourceMetricTile(
+                  icon: Icons.groups_outlined,
+                  label: 'Ressources',
+                  value: '$resourceCount',
+                ),
+                _ResourceMetricTile(
+                  icon: Icons.access_time,
+                  label: 'Charge totale',
+                  value: '${formatHours(totalWorkloadHours)} h',
+                ),
+                _ResourceMetricTile(
+                  icon: Icons.euro,
+                  label: 'Coût total',
+                  value: '${formatMoney(estimatedCost)} €',
+                ),
+                _ResourceMetricTile(
+                  icon: Icons.warning_amber_outlined,
+                  label: 'Surchargées',
+                  value: '$overloadedResourceCount',
+                  isWarning: overloadedResourceCount > 0,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ResourceMetricTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool isWarning;
+
+  const _ResourceMetricTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.isWarning = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isWarning ? Colors.red : Theme.of(context).colorScheme.primary;
+
+    return Container(
+      width: 180,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isWarning
+              ? Colors.red.withOpacity(0.35)
+              : Theme.of(context).dividerColor.withOpacity(0.25),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            color: color,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: isWarning ? Colors.red : null,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResourceFinancialTable extends StatelessWidget {
+  final List<_ResourceFinancialRow> rows;
+
+  final String Function(double value) formatHours;
+  final String Function(double value) formatMoney;
+  final String Function(double? value) formatPercent;
+
+  const _ResourceFinancialTable({
+    required this.rows,
+    required this.formatHours,
+    required this.formatMoney,
+    required this.formatPercent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('Aucune ressource à analyser.'),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: const [
+              DataColumn(label: Text('Ressource')),
+              DataColumn(label: Text('Type')),
+              DataColumn(label: Text('Charge')),
+              DataColumn(label: Text('Capacité')),
+              DataColumn(label: Text('Utilisation')),
+              DataColumn(label: Text('Taux')),
+              DataColumn(label: Text('Coût total')),
+              DataColumn(label: Text('Statut')),
+            ],
+            rows: rows.map((row) {
+              return DataRow(
+                cells: [
+                  DataCell(
+                    Text(
+                      row.resource.name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  DataCell(Text(row.resource.type)),
+                  DataCell(Text('${formatHours(row.assignedHours)} h')),
+                  DataCell(Text('${row.capacityHoursPerWeek} h')),
+                  DataCell(Text(formatPercent(row.utilizationPercent))),
+                  DataCell(Text('${formatMoney(row.costPerHour)} €/h')),
+                  DataCell(Text('${formatMoney(row.estimatedCost)} €')),
+                  DataCell(
+                    Chip(
+                      label: Text(
+                        row.isOverloaded ? 'Surchargée' : 'OK',
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      avatar: Icon(
+                        row.isOverloaded
+                            ? Icons.warning_amber_outlined
+                            : Icons.check_circle_outline,
+                        size: 16,
+                        color: row.isOverloaded
+                            ? Colors.red
+                            : Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ResourcesData {
+  final List<Resource> resources;
+  final ProjectResourceAnalysis analysis;
+
+  const _ResourcesData({
+    required this.resources,
+    required this.analysis,
+  });
+}
+
+class _ResourceFinancialRow {
+  final Resource resource;
+
+  final double assignedHours;
+  final int capacityHoursPerWeek;
+  final double costPerHour;
+  final double estimatedCost;
+  final double? utilizationPercent;
+  final bool isOverloaded;
+
+  const _ResourceFinancialRow({
+    required this.resource,
+    required this.assignedHours,
+    required this.capacityHoursPerWeek,
+    required this.costPerHour,
+    required this.estimatedCost,
+    required this.utilizationPercent,
+    required this.isOverloaded,
+  });
 }

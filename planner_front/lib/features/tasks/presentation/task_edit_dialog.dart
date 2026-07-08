@@ -23,6 +23,8 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
   late final TextEditingController _durationController;
 
   late DateTime _startDate;
+  DateTime? _deadline;
+
   late double _progressPercent;
 
   @override
@@ -40,6 +42,8 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
     );
 
     _startDate = widget.task.startDate ?? DateTime.now();
+    _deadline = widget.task.deadline;
+
     _progressPercent = widget.task.progressPercent.toDouble();
   }
 
@@ -55,6 +59,12 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
     return WorkingDayUtils.addWorkingDays(startDate, duration);
   }
 
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/'
+        '${date.year}';
+  }
+
   Future<void> _pickStartDate() async {
     final pickedDate = await showDatePicker(
       context: context,
@@ -67,6 +77,34 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
 
     setState(() {
       _startDate = pickedDate;
+
+      if (_deadline != null && _deadline!.isBefore(_startDate)) {
+        _deadline = null;
+      }
+    });
+  }
+
+  Future<void> _pickDeadline() async {
+    final duration = int.tryParse(_durationController.text) ?? 1;
+    final endDate = _computeEndDate(_startDate, duration);
+
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _deadline ?? endDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+    );
+
+    if (pickedDate == null) return;
+
+    setState(() {
+      _deadline = pickedDate;
+    });
+  }
+
+  void _clearDeadline() {
+    setState(() {
+      _deadline = null;
     });
   }
 
@@ -89,6 +127,7 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
       duration: duration,
       isDone: progress >= 100,
       progressPercent: progress,
+      deadline: _deadline,
     );
 
     Navigator.of(context).pop(request);
@@ -98,6 +137,9 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
   Widget build(BuildContext context) {
     final duration = int.tryParse(_durationController.text) ?? 1;
     final endDate = _computeEndDate(_startDate, duration);
+
+    final isLatePreview =
+        _deadline != null && endDate.isAfter(_deadline!);
 
     return AlertDialog(
       title: const Text('Modifier la tâche'),
@@ -163,11 +205,7 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
                       child: OutlinedButton.icon(
                         onPressed: _pickStartDate,
                         icon: const Icon(Icons.calendar_month),
-                        label: Text(
-                          'Début : ${_startDate.day.toString().padLeft(2, '0')}/'
-                          '${_startDate.month.toString().padLeft(2, '0')}/'
-                          '${_startDate.year}',
-                        ),
+                        label: Text('Début : ${_formatDate(_startDate)}'),
                       ),
                     ),
                   ],
@@ -177,12 +215,50 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Fin calculée : ${endDate.day.toString().padLeft(2, '0')}/'
-                    '${endDate.month.toString().padLeft(2, '0')}/'
-                    '${endDate.year}',
+                    'Fin calculée : ${_formatDate(endDate)}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
+                const SizedBox(height: 12),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickDeadline,
+                        icon: const Icon(Icons.event_busy),
+                        label: Text(
+                          _deadline == null
+                              ? 'Deadline : aucune'
+                              : 'Deadline : ${_formatDate(_deadline!)}',
+                        ),
+                      ),
+                    ),
+                    if (_deadline != null) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Retirer la deadline',
+                        onPressed: _clearDeadline,
+                        icon: const Icon(Icons.clear),
+                      ),
+                    ],
+                  ],
+                ),
+
+                if (isLatePreview) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Cette tâche sera probablement en retard par rapport à sa deadline.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 16),
 
                 Align(

@@ -21,12 +21,12 @@ class TaskApi {
     return PlannerTask.fromJson(response.data as Map<String, dynamic>);
   }
 
-Future<void> updateTask(int taskId, TaskUpdateRequest request) async {
-  await ApiClient.dio.put(
-    '/Tasks/$taskId',
-    data: request.toJson(),
-  );
-}
+  Future<void> updateTask(int taskId, TaskUpdateRequest request) async {
+    await ApiClient.dio.put(
+      '/Tasks/$taskId',
+      data: request.toJson(),
+    );
+  }
 
   Future<void> deleteTask(int taskId) async {
     await ApiClient.dio.delete('/Tasks/$taskId');

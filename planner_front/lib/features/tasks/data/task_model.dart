@@ -14,6 +14,10 @@ class PlannerTask {
   final int? floatValue;
   final int progressPercent;
 
+  final DateTime? deadline;
+  final bool isLate;
+  final int? delayDays;
+
   PlannerTask({
     required this.id,
     required this.title,
@@ -29,6 +33,9 @@ class PlannerTask {
     this.isCritical,
     this.floatValue,
     this.progressPercent = 0,
+    this.deadline,
+    this.isLate = false,
+    this.delayDays,
   });
 
   factory PlannerTask.fromJson(Map<String, dynamic> json) {
@@ -53,6 +60,10 @@ class PlannerTask {
       isCritical: json['isCritical'],
       floatValue: json['totalFloat'] ?? json['float'] ?? json['floatValue'],
       progressPercent: json['progressPercent'] ?? 0,
+      deadline:
+          json['deadline'] != null ? DateTime.tryParse(json['deadline']) : null,
+      isLate: json['isLate'] ?? false,
+      delayDays: json['delayDays'],
     );
   }
 }
@@ -66,6 +77,7 @@ class TaskCreateRequest {
   final int duration;
   final bool isDone;
   final int progressPercent;
+  final DateTime? deadline;
 
   TaskCreateRequest({
     required this.title,
@@ -76,6 +88,7 @@ class TaskCreateRequest {
     required this.duration,
     this.isDone = false,
     this.progressPercent = 0,
+    this.deadline,
   });
 
   Map<String, dynamic> toJson() {
@@ -88,6 +101,7 @@ class TaskCreateRequest {
       'duration': duration,
       'isDone': isDone,
       'progressPercent': progressPercent,
+      'deadline': deadline?.toIso8601String(),
     };
   }
 }
@@ -101,6 +115,8 @@ class TaskUpdateRequest {
   final int duration;
   final bool isDone;
   final int progressPercent;
+  final DateTime? deadline;
+
   TaskUpdateRequest({
     required this.title,
     this.description,
@@ -110,6 +126,7 @@ class TaskUpdateRequest {
     required this.duration,
     required this.isDone,
     this.progressPercent = 0,
+    this.deadline,
   });
 
   Map<String, dynamic> toJson() {
@@ -122,6 +139,7 @@ class TaskUpdateRequest {
       'duration': duration,
       'isDone': isDone,
       'progressPercent': progressPercent,
+      'deadline': deadline?.toIso8601String(),
     };
   }
 }
