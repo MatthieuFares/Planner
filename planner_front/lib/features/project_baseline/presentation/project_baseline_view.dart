@@ -21,6 +21,7 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
 
   List<ProjectBaselineModel> _baselines = [];
   ProjectBaselineComparisonModel? _comparison;
+  int? _selectedBaselineId;
 
   bool _isLoading = true;
   bool _isCreating = false;
@@ -42,12 +43,42 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     });
 
     try {
-      final baselines = await _api.getByProjectId(widget.projectId);
+      final baselines = await _api.getByProjectId(
+        widget.projectId,
+      );
+
+      int? selectedBaselineId = _selectedBaselineId;
+
+      final selectedStillExists = baselines.any(
+        (baseline) => baseline.id == selectedBaselineId,
+      );
+
+      if (!selectedStillExists) {
+        ProjectBaselineModel? activeBaseline;
+
+        for (final baseline in baselines) {
+          if (baseline.isActive) {
+            activeBaseline = baseline;
+            break;
+          }
+        }
+
+        selectedBaselineId = activeBaseline?.id ??
+            (baselines.isEmpty ? null : baselines.first.id);
+      }
+
+      ProjectBaselineComparisonModel? comparison;
+
+      if (selectedBaselineId != null) {
+        comparison = await _api.compare(selectedBaselineId);
+      }
 
       if (!mounted) return;
 
       setState(() {
         _baselines = baselines;
+        _selectedBaselineId = selectedBaselineId;
+        _comparison = comparison;
         _isLoading = false;
       });
     } catch (error) {
@@ -161,26 +192,26 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     });
 
     try {
-      await _api.create(
+      final createdBaseline = await _api.create(
         projectId: widget.projectId,
         name: name,
         description: description,
         setAsActive: setAsActive,
       );
 
-      final baselines = await _api.getByProjectId(widget.projectId);
+      _selectedBaselineId = createdBaseline.id;
+
+      await _loadBaselines();
 
       if (!mounted) return;
 
       setState(() {
-        _baselines = baselines;
-        _comparison = null;
         _isCreating = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Baseline créée.'),
+          content: Text('Baseline créée et sélectionnée.'),
         ),
       );
     } catch (error) {
@@ -207,13 +238,10 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     try {
       await _api.setActive(baseline.id);
 
-      final baselines = await _api.getByProjectId(widget.projectId);
+      _selectedBaselineId = baseline.id;
+      await _loadBaselines();
 
       if (!mounted) return;
-
-      setState(() {
-        _baselines = baselines;
-      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -267,16 +295,13 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     try {
       await _api.delete(baseline.id);
 
-      final baselines = await _api.getByProjectId(widget.projectId);
+      if (_selectedBaselineId == baseline.id) {
+        _selectedBaselineId = null;
+      }
+
+      await _loadBaselines();
 
       if (!mounted) return;
-
-      setState(() {
-        _baselines = baselines;
-        if (_comparison?.baselineId == baseline.id) {
-          _comparison = null;
-        }
-      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -298,8 +323,11 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     }
   }
 
-  Future<void> _compareBaseline(ProjectBaselineModel baseline) async {
+  Future<void> _compareBaseline(
+    ProjectBaselineModel baseline,
+  ) async {
     setState(() {
+      _selectedBaselineId = baseline.id;
       _isComparing = true;
       _error = null;
     });
@@ -329,6 +357,23 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     }
   }
 
+  Future<void> _selectBaselineById(int? baselineId) async {
+    if (baselineId == null) return;
+
+    ProjectBaselineModel? selected;
+
+    for (final baseline in _baselines) {
+      if (baseline.id == baselineId) {
+        selected = baseline;
+        break;
+      }
+    }
+
+    if (selected == null) return;
+
+    await _compareBaseline(selected);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -339,7 +384,7 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
       padding: const EdgeInsets.all(16),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1180),
+          constraints: const BoxConstraints(maxWidth: 1380),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -389,7 +434,7 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
 
   Widget _buildErrorCard() {
     return Card(
-      color: Colors.red.withOpacity(0.08),
+      color: Colors.red.withValues(alpha: 0.08),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Text(
@@ -425,8 +470,22 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: _baselines.map((baseline) {
+            final isSelected =
+                baseline.id == _selectedBaselineId;
+
             return ListTile(
-              contentPadding: EdgeInsets.zero,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+              selected: isSelected,
+              selectedTileColor: Theme.of(context)
+                  .colorScheme
+                  .primaryContainer
+                  .withValues(alpha: 0.20),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
               leading: Icon(
                 baseline.isActive
                     ? Icons.radio_button_checked
@@ -462,10 +521,17 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
                 spacing: 8,
                 children: [
                   OutlinedButton.icon(
-                    onPressed:
-                        _isComparing ? null : () => _compareBaseline(baseline),
-                    icon: const Icon(Icons.compare_arrows),
-                    label: const Text('Comparer'),
+                    onPressed: _isComparing
+                        ? null
+                        : () => _compareBaseline(baseline),
+                    icon: Icon(
+                      isSelected
+                          ? Icons.check_circle
+                          : Icons.compare_arrows,
+                    ),
+                    label: Text(
+                      isSelected ? 'Sélectionnée' : 'Comparer',
+                    ),
                   ),
                   if (!baseline.isActive)
                     OutlinedButton.icon(
@@ -489,128 +555,463 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
 
   Widget _buildComparisonCard(BuildContext context) {
     final comparison = _comparison!;
+
     final delayedRows = comparison.rows
         .where((row) => row.isDelayedComparedToBaseline)
         .length;
+
     final missingRows = comparison.rows
         .where((row) => row.isMissingFromCurrentPlanning)
         .length;
-    final changedRows = comparison.rows.where(_hasAnyVariance).length;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    final changedRows = comparison.rows
+        .where(_hasAnyVariance)
+        .length;
+
+    final comparableRows = comparison.rows
+        .where(
+          (row) =>
+              !row.isMissingFromCurrentPlanning &&
+              row.currentEndDate != null,
+        )
+        .toList();
+
+    final averageStartVariance = _averageVariance(
+      comparableRows
+          .map((row) => row.startVarianceDays)
+          .whereType<int>(),
+    );
+
+    final averageEndVariance = _averageVariance(
+      comparableRows
+          .map((row) => row.endVarianceDays)
+          .whereType<int>(),
+    );
+
+    final averageDurationVariance = _averageVariance(
+      comparableRows.map((row) => row.durationVarianceDays),
+    );
+
+    final driftRows = comparableRows
+        .where((row) => (row.endVarianceDays ?? 0) != 0)
+        .toList()
+      ..sort(
+        (a, b) => (b.endVarianceDays ?? 0)
+            .abs()
+            .compareTo((a.endVarianceDays ?? 0).abs()),
+      );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               children: [
                 const Icon(Icons.compare_arrows),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Comparaison : ${comparison.baselineName}',
-                    style: Theme.of(context).textTheme.titleLarge,
+                    'Comparaison du planning',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge,
+                  ),
+                ),
+                SizedBox(
+                  width: 340,
+                  child: DropdownButtonFormField<int>(
+                    key: ValueKey<int?>(
+                      _selectedBaselineId,
+                    ),
+                    initialValue: _selectedBaselineId,
+                    decoration: const InputDecoration(
+                      labelText: 'Baseline comparée',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    isExpanded: true,
+                    items: _baselines.map((baseline) {
+                      return DropdownMenuItem<int>(
+                        value: baseline.id,
+                        child: Text(
+                          '${baseline.name}'
+                          '${baseline.isActive ? ' · active' : ''}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: _isComparing
+                        ? null
+                        : _selectBaselineById,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _buildMetricCard(
+              context: context,
+              icon: Icons.task_alt,
+              label: 'Tâches capturées',
+              value: '${comparison.rows.length}',
+              detail:
+                  '$changedRows avec au moins une variation',
+            ),
+            _buildMetricCard(
+              context: context,
+              icon: Icons.schedule,
+              label: 'Dérive moyenne de fin',
+              value: _formatSignedAverage(
+                averageEndVariance,
+              ),
+              detail:
+                  'Écart entre baseline et planning courant',
+              isAlert: averageEndVariance > 0,
+              isPositive: averageEndVariance < 0,
+            ),
+            _buildMetricCard(
+              context: context,
+              icon: Icons.play_arrow_outlined,
+              label: 'Dérive moyenne de début',
+              value: _formatSignedAverage(
+                averageStartVariance,
+              ),
+              detail:
+                  'Décalage moyen des dates de démarrage',
+              isAlert: averageStartVariance > 0,
+              isPositive: averageStartVariance < 0,
+            ),
+            _buildMetricCard(
+              context: context,
+              icon: Icons.timelapse,
+              label: 'Variation de durée',
+              value: _formatSignedAverage(
+                averageDurationVariance,
+              ),
+              detail:
+                  '$delayedRows tâche(s) retardée(s)',
+              isAlert: averageDurationVariance > 0,
+              isPositive: averageDurationVariance < 0,
+            ),
+            _buildMetricCard(
+              context: context,
+              icon: Icons.delete_sweep_outlined,
+              label: 'Absentes du planning',
+              value: '$missingRows',
+              detail:
+                  'Présentes dans la baseline uniquement',
+              isAlert: missingRows > 0,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildDriftChartCard(
+          context: context,
+          rows: driftRows.take(12).toList(),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
               children: [
-                Chip(label: Text('${comparison.rows.length} tâche(s)')),
-                Chip(label: Text('$changedRows modifiée(s)')),
-                Chip(label: Text('$delayedRows retardée(s)')),
-                if (missingRows > 0)
-                  Chip(label: Text('$missingRows supprimée(s)')),
+                Row(
+                  children: [
+                    const Icon(Icons.table_chart_outlined),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Détail · ${comparison.baselineName}',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge,
+                      ),
+                    ),
+                    Text(
+                      'Créée le '
+                      '${_dateFormatter.format(comparison.createdAt)}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columns: const [
+                      DataColumn(label: Text('WBS')),
+                      DataColumn(label: Text('Tâche')),
+                      DataColumn(label: Text('Début')),
+                      DataColumn(label: Text('Δ Début')),
+                      DataColumn(label: Text('Fin')),
+                      DataColumn(label: Text('Δ Fin')),
+                      DataColumn(label: Text('Durée')),
+                      DataColumn(label: Text('Δ Durée')),
+                      DataColumn(label: Text('Progression')),
+                      DataColumn(label: Text('Float')),
+                      DataColumn(label: Text('Statut')),
+                    ],
+                    rows: comparison.rows.map((row) {
+                      return DataRow(
+                        color:
+                            WidgetStateProperty.resolveWith<Color?>(
+                          (states) {
+                            if (row.isMissingFromCurrentPlanning) {
+                              return Colors.grey.withValues(
+                                alpha: 0.18,
+                              );
+                            }
+
+                            if (row.isDelayedComparedToBaseline ||
+                                row.currentIsLate) {
+                              return Colors.red.withValues(
+                                alpha: 0.08,
+                              );
+                            }
+
+                            if (_hasAnyVariance(row)) {
+                              return Colors.orange.withValues(
+                                alpha: 0.08,
+                              );
+                            }
+
+                            return null;
+                          },
+                        ),
+                        cells: [
+                          DataCell(
+                            Text(row.wbsCode ?? '-'),
+                          ),
+                          DataCell(
+                            SizedBox(
+                              width: 220,
+                              child: Text(
+                                row.taskTitle,
+                                overflow:
+                                    TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${_formatDate(row.baselineStartDate)} '
+                              '→ ${_formatDate(row.currentStartDate)}',
+                            ),
+                          ),
+                          DataCell(
+                            _varianceText(
+                              row.startVarianceDays,
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${_formatDate(row.baselineEndDate)} '
+                              '→ ${_formatDate(row.currentEndDate)}',
+                            ),
+                          ),
+                          DataCell(
+                            _varianceText(
+                              row.endVarianceDays,
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${row.baselineDuration}j '
+                              '→ ${row.currentDuration}j',
+                            ),
+                          ),
+                          DataCell(
+                            _varianceText(
+                              row.durationVarianceDays,
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${row.baselineProgressPercent}% '
+                              '→ ${row.currentProgressPercent}%',
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${row.baselineTotalFloat} '
+                              '→ ${row.currentTotalFloat}',
+                            ),
+                          ),
+                          DataCell(_statusChip(row)),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 16),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text('WBS')),
-                  DataColumn(label: Text('Tâche')),
-                  DataColumn(label: Text('Début')),
-                  DataColumn(label: Text('Fin')),
-                  DataColumn(label: Text('Δ Fin')),
-                  DataColumn(label: Text('Durée')),
-                  DataColumn(label: Text('Δ Durée')),
-                  DataColumn(label: Text('Progression')),
-                  DataColumn(label: Text('Float')),
-                  DataColumn(label: Text('Statut')),
-                ],
-                rows: comparison.rows.map((row) {
-                  return DataRow(
-                    color: WidgetStateProperty.resolveWith<Color?>(
-                      (states) {
-                        if (row.isMissingFromCurrentPlanning) {
-                          return Colors.grey.withOpacity(0.18);
-                        }
+          ),
+        ),
+      ],
+    );
+  }
 
-                        if (row.isDelayedComparedToBaseline ||
-                            row.currentIsLate) {
-                          return Colors.red.withOpacity(0.08);
-                        }
+  Widget _buildMetricCard({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required String value,
+    required String detail,
+    bool isAlert = false,
+    bool isPositive = false,
+  }) {
+    final color = isAlert
+        ? Colors.red
+        : isPositive
+            ? Colors.green
+            : Theme.of(context).colorScheme.primary;
 
-                        if (_hasAnyVariance(row)) {
-                          return Colors.orange.withOpacity(0.08);
-                        }
-
-                        return null;
-                      },
+    return SizedBox(
+      width: 248,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelLarge,
                     ),
-                    cells: [
-                      DataCell(Text(row.wbsCode ?? '-')),
-                      DataCell(
-                        SizedBox(
-                          width: 220,
-                          child: Text(
-                            row.taskTitle,
-                            overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 4),
+                    Text(
+                      value,
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(
+                            color: color,
+                            fontWeight: FontWeight.bold,
                           ),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${_formatDate(row.baselineStartDate)} → ${_formatDate(row.currentStartDate)}',
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${_formatDate(row.baselineEndDate)} → ${_formatDate(row.currentEndDate)}',
-                        ),
-                      ),
-                      DataCell(_varianceText(row.endVarianceDays)),
-                      DataCell(
-                        Text(
-                          '${row.baselineDuration}j → ${row.currentDuration}j',
-                        ),
-                      ),
-                      DataCell(_varianceText(row.durationVarianceDays)),
-                      DataCell(
-                        Text(
-                          '${row.baselineProgressPercent}% → ${row.currentProgressPercent}%',
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${row.baselineTotalFloat} → ${row.currentTotalFloat}',
-                        ),
-                      ),
-                      DataCell(_statusChip(row)),
-                    ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      detail,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDriftChartCard({
+    required BuildContext context,
+    required List<ProjectBaselineComparisonRowModel> rows,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.bar_chart),
+                const SizedBox(width: 8),
+                Text(
+                  'Principales dérives de fin',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Les valeurs positives indiquent un retard '
+              'par rapport à la baseline.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall,
+            ),
+            const SizedBox(height: 16),
+            if (rows.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: 18,
+                ),
+                child: Center(
+                  child: Text(
+                    'Aucune dérive de fin détectée.',
+                  ),
+                ),
+              )
+            else
+              _BaselineVarianceChart(
+                entries: rows.map((row) {
+                  return _BaselineVarianceEntry(
+                    label: row.wbsCode == null ||
+                            row.wbsCode!.isEmpty
+                        ? row.taskTitle
+                        : '${row.wbsCode} · '
+                            '${row.taskTitle}',
+                    value: row.endVarianceDays ?? 0,
                   );
                 }).toList(),
               ),
-            ),
           ],
         ),
       ),
     );
+  }
+
+  double _averageVariance(Iterable<int> values) {
+    final list = values.toList();
+
+    if (list.isEmpty) return 0;
+
+    final total = list.fold<int>(
+      0,
+      (sum, value) => sum + value,
+    );
+
+    return total / list.length;
+  }
+
+  String _formatSignedAverage(double value) {
+    final rounded = value.abs() < 0.05
+        ? '0'
+        : value.toStringAsFixed(1);
+
+    if (value > 0) {
+      return '+$rounded j';
+    }
+
+    return '$rounded j';
   }
 
   bool _hasAnyVariance(ProjectBaselineComparisonRowModel row) {
@@ -685,3 +1086,129 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     );
   }
 }
+
+class _BaselineVarianceEntry {
+  final String label;
+  final int value;
+
+  const _BaselineVarianceEntry({
+    required this.label,
+    required this.value,
+  });
+}
+
+class _BaselineVarianceChart extends StatelessWidget {
+  final List<_BaselineVarianceEntry> entries;
+
+  const _BaselineVarianceChart({
+    required this.entries,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    var maxAbsValue = 1;
+
+    for (final entry in entries) {
+      if (entry.value.abs() > maxAbsValue) {
+        maxAbsValue = entry.value.abs();
+      }
+    }
+
+    return Column(
+      children: entries.map((entry) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 260,
+                child: Tooltip(
+                  message: entry.label,
+                  child: Text(
+                    entry.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final halfWidth =
+                        constraints.maxWidth / 2;
+
+                    final barWidth =
+                        (entry.value.abs() /
+                                maxAbsValue) *
+                            (halfWidth - 12);
+
+                    final isDelay = entry.value > 0;
+                    final barColor = isDelay
+                        ? Colors.red
+                        : Colors.green;
+
+                    return SizedBox(
+                      height: 24,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Positioned(
+                            left: halfWidth,
+                            top: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 1,
+                              color: Theme.of(context)
+                                  .dividerColor,
+                            ),
+                          ),
+                          Positioned(
+                            left: isDelay
+                                ? halfWidth
+                                : halfWidth - barWidth,
+                            width: barWidth,
+                            top: 4,
+                            bottom: 4,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: barColor.withValues(
+                                  alpha: 0.75,
+                                ),
+                                borderRadius:
+                                    BorderRadius.circular(5),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: isDelay
+                                ? halfWidth + barWidth + 6
+                                : null,
+                            right: isDelay
+                                ? null
+                                : halfWidth + barWidth + 6,
+                            child: Text(
+                              entry.value > 0
+                                  ? '+${entry.value}j'
+                                  : '${entry.value}j',
+                              style: TextStyle(
+                                color: barColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+

@@ -4,16 +4,22 @@ import 'package:intl/intl.dart';
 import '../data/structured_gantt_api.dart';
 import '../data/structured_gantt_model.dart';
 
+import '../../project_baseline/data/project_baseline_api.dart';
+import '../../project_baseline/data/project_baseline_model.dart';
+
 import '../../project_calendar/data/project_calendar_api.dart';
 import '../../project_calendar/data/project_calendar_exception_api.dart';
 import '../../project_calendar/data/project_calendar_exception_model.dart';
 import '../../project_calendar/data/project_calendar_model.dart';
+import '../../project_calendar/data/project_calendar_period_api.dart';
+import '../../project_calendar/data/project_calendar_period_model.dart';
 
 import '../../tasks/data/task_api.dart';
 import '../../tasks/data/task_model.dart';
 import '../../tasks/presentation/task_form_dialog.dart';
 import '../../tasks/presentation/task_form_result.dart';
 import '../../tasks/presentation/task_edit_dialog.dart';
+import '../../tasks/presentation/task_edit_result.dart';
 
 import '../../dependencies/data/dependency_api.dart';
 import '../../dependencies/data/dependency_model.dart';
@@ -37,6 +43,45 @@ int _calendarDaysBetween(DateTime start, DateTime end) {
 }
 
 const double _ganttHeaderHeight = 92;
+const double _ganttRowHeight = 48;
+const double _ganttLeftPanelBaseWidth = 420;
+const double _ganttStartColumnWidth = 82;
+const double _ganttEndColumnWidth = 82;
+const double _ganttDurationColumnWidth = 58;
+const double _ganttProgressColumnWidth = 62;
+const double _ganttDeadlineColumnWidth = 82;
+
+const List<String> _planningItemTypes = <String>[
+  'Section',
+  'Phase',
+  'Zone',
+  'Floor',
+  'Lot',
+  'Task',
+];
+
+bool _isStructuralPlanningItemType(String type) {
+  return type != 'Task';
+}
+
+String _planningItemTypeLabel(String type) {
+  switch (type) {
+    case 'Section':
+      return 'Section';
+    case 'Phase':
+      return 'Phase';
+    case 'Zone':
+      return 'Zone';
+    case 'Floor':
+      return 'Étage';
+    case 'Lot':
+      return 'Lot';
+    case 'Task':
+      return 'Tâche';
+    default:
+      return type;
+  }
+}
 
 bool _isSameDay(DateTime a, DateTime b) {
   final cleanA = _dateOnly(a);
@@ -62,10 +107,29 @@ ProjectCalendarExceptionModel? _findExceptionForDate({
   return null;
 }
 
+ProjectCalendarPeriodModel? _findPeriodForDate({
+  required DateTime date,
+  required List<ProjectCalendarPeriodModel> periods,
+}) {
+  final cleanDate = _dateOnly(date);
+
+  for (final period in periods) {
+    final startDate = _dateOnly(period.startDate);
+    final endDate = _dateOnly(period.endDate);
+
+    if (!cleanDate.isBefore(startDate) && !cleanDate.isAfter(endDate)) {
+      return period;
+    }
+  }
+
+  return null;
+}
+
 bool _isWorkingDayForProject({
   required DateTime date,
   required ProjectCalendarModel calendar,
   required List<ProjectCalendarExceptionModel> exceptions,
+  required List<ProjectCalendarPeriodModel> periods,
 }) {
   final exception = _findExceptionForDate(
     date: date,
@@ -74,6 +138,15 @@ bool _isWorkingDayForProject({
 
   if (exception != null) {
     return exception.isWorkingDay;
+  }
+
+  final period = _findPeriodForDate(
+    date: date,
+    periods: periods,
+  );
+
+  if (period != null) {
+    return false;
   }
 
   switch (_dateOnly(date).weekday) {
@@ -100,11 +173,42 @@ class _StructuredGanttLoadedData {
   final StructuredGanttResponse gantt;
   final ProjectCalendarModel calendar;
   final List<ProjectCalendarExceptionModel> exceptions;
+  final List<ProjectCalendarPeriodModel> periods;
+  final List<ProjectBaselineModel> baselines;
+  final ProjectBaselineComparisonModel? baselineComparison;
+  final int? selectedBaselineId;
 
   const _StructuredGanttLoadedData({
     required this.gantt,
     required this.calendar,
     required this.exceptions,
+    required this.periods,
+    required this.baselines,
+    required this.baselineComparison,
+    required this.selectedBaselineId,
+  });
+}
+
+
+class _CreatePlanningItemDialogResult {
+  final String type;
+  final String? name;
+  final int? parentId;
+
+  const _CreatePlanningItemDialogResult({
+    required this.type,
+    this.name,
+    this.parentId,
+  });
+
+  bool get isTask => type == 'Task';
+}
+
+class _MovePlanningItemDialogResult {
+  final int? newParentId;
+
+  const _MovePlanningItemDialogResult({
+    required this.newParentId,
   });
 }
 
@@ -129,10 +233,16 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   final ProjectCalendarApi _calendarApi = ProjectCalendarApi();
   final ProjectCalendarExceptionApi _exceptionApi =
       ProjectCalendarExceptionApi();
+  final ProjectCalendarPeriodApi _periodApi =
+      ProjectCalendarPeriodApi();
+  final ProjectBaselineApi _baselineApi =
+      ProjectBaselineApi();
 
   late Future<_StructuredGanttLoadedData> _ganttFuture;
 
   double _dayWidth = 24;
+  int? _selectedBaselineId;
+  bool _showBaselineBars = true;
   StructuredGanttDisplayMode _displayMode = StructuredGanttDisplayMode.auto;
 
   @override
@@ -146,15 +256,94 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   }
 
   Future<_StructuredGanttLoadedData> _loadGanttData() async {
-    final gantt = await _ganttApi.getStructuredGantt(widget.projectId);
-    final calendar = await _calendarApi.getByProjectId(widget.projectId);
-    final exceptions = await _exceptionApi.getByProjectId(widget.projectId);
+    final gantt = await _ganttApi.getStructuredGantt(
+      widget.projectId,
+    );
+    final calendar = await _calendarApi.getByProjectId(
+      widget.projectId,
+    );
+    final exceptions = await _exceptionApi.getByProjectId(
+      widget.projectId,
+    );
+    final periods = await _periodApi.getByProjectId(
+      widget.projectId,
+    );
+
+    var baselines = <ProjectBaselineModel>[];
+    ProjectBaselineComparisonModel? baselineComparison;
+    int? resolvedBaselineId = _selectedBaselineId;
+
+    try {
+      baselines = await _baselineApi.getByProjectId(
+        widget.projectId,
+      );
+
+      final baselineWasExplicitlyDisabled =
+          resolvedBaselineId == 0;
+
+      if (!baselineWasExplicitlyDisabled) {
+        final selectedStillExists = baselines.any(
+          (baseline) =>
+              baseline.id == resolvedBaselineId,
+        );
+
+        if (!selectedStillExists) {
+          ProjectBaselineModel? activeBaseline;
+
+          for (final baseline in baselines) {
+            if (baseline.isActive) {
+              activeBaseline = baseline;
+              break;
+            }
+          }
+
+          resolvedBaselineId = activeBaseline?.id;
+        }
+      }
+
+      if (resolvedBaselineId != null &&
+          resolvedBaselineId > 0) {
+        baselineComparison = await _baselineApi.compare(
+          resolvedBaselineId,
+        );
+      }
+    } catch (_) {
+      // Une erreur de baseline ne doit jamais bloquer
+      // le chargement principal du Gantt.
+      baselines = <ProjectBaselineModel>[];
+      baselineComparison = null;
+      resolvedBaselineId = null;
+    }
+
+    _selectedBaselineId = resolvedBaselineId;
 
     return _StructuredGanttLoadedData(
       gantt: gantt,
       calendar: calendar,
       exceptions: exceptions,
+      periods: periods,
+      baselines: baselines,
+      baselineComparison: baselineComparison,
+      selectedBaselineId:
+          resolvedBaselineId != null &&
+                  resolvedBaselineId > 0
+              ? resolvedBaselineId
+              : null,
     );
+  }
+
+  void _changeBaseline(int? baselineId) {
+    setState(() {
+      // 0 représente volontairement « aucune baseline ».
+      _selectedBaselineId = baselineId;
+      _loadGantt();
+    });
+  }
+
+  void _toggleBaselineBars() {
+    setState(() {
+      _showBaselineBars = !_showBaselineBars;
+    });
   }
 
   void _zoomIn() {
@@ -284,11 +473,11 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     try {
       await _ganttApi.syncProjectTasks(widget.projectId);
 
+      if (!mounted) return;
+
       setState(() {
         _loadGantt();
       });
-
-      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -311,12 +500,12 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   }) async {
     final result = await showDialog<TaskFormResult>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return TaskFormDialog(projectId: widget.projectId);
       },
     );
 
-    if (result == null) return;
+    if (!mounted || result == null) return;
 
     try {
       final createdTask = await _taskApi.createTask(result.taskRequest);
@@ -337,9 +526,9 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
         taskId: createdTask.id,
       );
 
-      if (createdPlanningItem == null) {
-        if (!mounted) return;
+      if (!mounted) return;
 
+      if (createdPlanningItem == null) {
         setState(() {
           _loadGantt();
         });
@@ -396,26 +585,88 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     }
   }
 
-  Future<void> _editTaskFromGantt(StructuredGanttItem item) async {
+  Future<void> _editTaskFromGantt(
+    StructuredGanttItem item,
+  ) async {
     final task = item.task;
 
     if (task == null) return;
 
     try {
       final plannerTask = await _loadPlannerTaskForEdit(task);
+      final currentGantt = await _ganttApi.getStructuredGantt(
+        widget.projectId,
+      );
 
       if (!mounted) return;
 
-      final request = await showDialog<TaskUpdateRequest>(
+      final currentPlanningItem = currentGantt.items.firstWhere(
+        (candidate) => candidate.id == item.id,
+        orElse: () => item,
+      );
+
+      final result = await showDialog<TaskEditResult>(
         context: context,
-        builder: (context) {
-          return TaskEditDialog(task: plannerTask);
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return TaskEditDialog(
+            task: plannerTask,
+            planningItem: currentPlanningItem,
+            planningItems: currentGantt.items,
+          );
         },
       );
 
-      if (request == null) return;
+      if (!mounted || result == null) return;
 
-      await _taskApi.updateTask(plannerTask.id, request);
+      await _taskApi.updateTask(
+        plannerTask.id,
+        result.taskRequest,
+      );
+
+      if (item.parentId != result.parentId) {
+        await _ganttApi.movePlanningItem(
+          itemId: item.id,
+          newParentId: result.parentId,
+        );
+      }
+
+      for (final dependencyId
+          in result.dependencyIdsToDelete) {
+        await _dependencyApi.deleteDependency(dependencyId);
+      }
+
+      for (final action in result.dependenciesToUpdate) {
+        await _dependencyApi.updateDependency(
+          action.dependencyId,
+          action.request,
+        );
+      }
+
+      for (final request in result.dependenciesToCreate) {
+        await _dependencyApi.createDependency(request);
+      }
+
+      for (final assignmentId
+          in result.assignmentIdsToDelete) {
+        await _resourceAssignmentApi.deleteAssignment(
+          assignmentId,
+        );
+      }
+
+      for (final action in result.assignmentsToUpdate) {
+        await _resourceAssignmentApi.updateAssignment(
+          action.assignmentId,
+          action.request,
+        );
+      }
+
+      for (final request in result.assignmentsToCreate) {
+        await _resourceAssignmentApi.createAssignment(
+          request,
+        );
+      }
+
       await _ganttApi.syncProjectTasks(widget.projectId);
 
       if (!mounted) return;
@@ -424,17 +675,48 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
         _loadGantt();
       });
 
+      final changeDetails = <String>[];
+
+      if (item.parentId != result.parentId) {
+        changeDetails.add('position');
+      }
+
+      if (result.dependencyChangeCount > 0) {
+        changeDetails.add(
+          '${result.dependencyChangeCount} dépendance(s)',
+        );
+      }
+
+      if (result.assignmentChangeCount > 0) {
+        changeDetails.add(
+          '${result.assignmentChangeCount} assignation(s)',
+        );
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Tâche "${request.title}" modifiée.'),
+          content: Text(
+            changeDetails.isEmpty
+                ? 'Tâche "${result.taskRequest.title}" modifiée.'
+                : 'Tâche "${result.taskRequest.title}" modifiée · '
+                    '${changeDetails.join(' · ')}.',
+          ),
         ),
       );
     } catch (error) {
       if (!mounted) return;
 
+      setState(() {
+        _loadGantt();
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur modification tâche : $error'),
+          content: Text(
+            'Erreur pendant la modification complète : $error\n'
+            'Le Gantt a été rechargé pour refléter '
+            'les changements éventuellement déjà appliqués.',
+          ),
         ),
       );
     }
@@ -447,7 +729,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
 
     final confirmDelete = await showDialog<bool>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Supprimer la tâche'),
           content: Text(
@@ -456,11 +738,11 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
               child: const Text('Annuler'),
             ),
             FilledButton.icon(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
               icon: const Icon(Icons.delete_outline),
               label: const Text('Supprimer'),
             ),
@@ -469,7 +751,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
       },
     );
 
-    if (confirmDelete != true) return;
+    if (!mounted || confirmDelete != true) return;
 
     try {
       await _taskApi.deleteTask(task.id);
@@ -497,212 +779,227 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     }
   }
 
-  Future<void> _createPlanningItem(List<StructuredGanttItem> items) async {
+  Future<void> _createPlanningItem(
+    List<StructuredGanttItem> items,
+  ) async {
+    const rootValue = -1;
+
     final nameController = TextEditingController();
+    final structuralParents = items
+        .where(
+          (item) => _isStructuralPlanningItemType(item.type),
+        )
+        .toList();
 
     String selectedType = 'Section';
-    StructuredGanttItem? selectedParent;
+    int selectedParentValue = rootValue;
 
-    List<StructuredGanttItem> getPossibleParentsForType(String type) {
-      if (type == 'Zone') {
-        return items.where((item) => item.type == 'Section').toList();
-      }
-
-      if (type == 'Task') {
-        return items
-            .where((item) => item.type == 'Section' || item.type == 'Zone')
-            .toList();
-      }
-
-      return [];
-    }
-
-    await showDialog<void>(
+    final dialogResult =
+        await showDialog<_CreatePlanningItemDialogResult>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final isSection = selectedType == 'Section';
-            final isZone = selectedType == 'Zone';
+          builder: (dialogContext, setDialogState) {
             final isTask = selectedType == 'Task';
+            final selectedTypeLabel =
+                _planningItemTypeLabel(selectedType);
 
-            final possibleParents = getPossibleParentsForType(selectedType);
-            final needsParent = isZone || isTask;
+            final parentSelectionIsValid = isTask
+                ? structuralParents.any(
+                    (parent) => parent.id == selectedParentValue,
+                  )
+                : selectedParentValue == rootValue ||
+                    structuralParents.any(
+                      (parent) => parent.id == selectedParentValue,
+                    );
 
-            final selectedParentStillValid = selectedParent == null ||
-                possibleParents.any(
-                  (parent) => parent.id == selectedParent!.id,
-                );
-
-            if (!selectedParentStillValid) {
-              selectedParent = null;
+            if (!parentSelectionIsValid) {
+              selectedParentValue = isTask &&
+                      structuralParents.isNotEmpty
+                  ? structuralParents.first.id
+                  : rootValue;
             }
 
             return AlertDialog(
               title: const Text('Ajouter au Gantt'),
               content: SizedBox(
-                width: 460,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      value: selectedType,
-                      decoration: const InputDecoration(
-                        labelText: 'Type',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Section',
-                          child: Text('Section'),
+                width: 520,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedType,
+                        decoration: const InputDecoration(
+                          labelText: 'Type',
+                          border: OutlineInputBorder(),
                         ),
-                        DropdownMenuItem(
-                          value: 'Zone',
-                          child: Text('Zone'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Task',
-                          child: Text('Tâche'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-
-                        setDialogState(() {
-                          selectedType = value;
-                          selectedParent = null;
-                        });
-                      },
-                    ),
-                    if (!isTask) ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: nameController,
-                        decoration: InputDecoration(
-                          labelText:
-                              isSection ? 'Nom de la section' : 'Nom de la zone',
-                          hintText:
-                              isSection ? 'Ex : Production MVP' : 'Ex : Front Flutter',
-                          border: const OutlineInputBorder(),
-                        ),
-                        autofocus: true,
-                      ),
-                    ],
-                    if (needsParent) ...[
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<StructuredGanttItem>(
-                        value: selectedParent,
-                        decoration: InputDecoration(
-                          labelText:
-                              isTask ? 'Créer la tâche dans' : 'Section parent',
-                          border: const OutlineInputBorder(),
-                        ),
-                        items: possibleParents.map((parent) {
-                          return DropdownMenuItem(
-                            value: parent,
-                            child: Text('${parent.wbsCode} - ${parent.name}'),
+                        items: _planningItemTypes.map((type) {
+                          return DropdownMenuItem<String>(
+                            value: type,
+                            child: Text(
+                              _planningItemTypeLabel(type),
+                            ),
                           );
                         }).toList(),
                         onChanged: (value) {
+                          if (value == null) return;
+
                           setDialogState(() {
-                            selectedParent = value;
+                            selectedType = value;
+
+                            if (selectedType == 'Task') {
+                              selectedParentValue =
+                                  structuralParents.isEmpty
+                                      ? rootValue
+                                      : structuralParents.first.id;
+                            }
                           });
                         },
                       ),
-                      if (possibleParents.isEmpty) ...[
+                      if (!isTask) ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: nameController,
+                          decoration: InputDecoration(
+                            labelText:
+                                'Nom du ${selectedTypeLabel.toLowerCase()}',
+                            hintText: switch (selectedType) {
+                              'Section' => 'Ex : Production MVP',
+                              'Phase' => 'Ex : Phase de préparation',
+                              'Zone' => 'Ex : Bâtiment A',
+                              'Floor' => 'Ex : Étage 2',
+                              'Lot' => 'Ex : Électricité',
+                              _ => 'Nom de l’élément',
+                            },
+                            border: const OutlineInputBorder(),
+                          ),
+                          autofocus: true,
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<int>(
+                        key: ValueKey<String>(
+                          'create-parent-$selectedType-'
+                          '$selectedParentValue',
+                        ),
+                        initialValue: selectedParentValue,
+                        decoration: InputDecoration(
+                          labelText: isTask
+                              ? 'Créer la tâche dans'
+                              : 'Parent',
+                          helperText: isTask
+                              ? 'Une tâche doit avoir un parent structurel.'
+                              : 'La racine ou n’importe quel élément structurel.',
+                          border: const OutlineInputBorder(),
+                        ),
+                        items: <DropdownMenuItem<int>>[
+                          if (!isTask)
+                            const DropdownMenuItem<int>(
+                              value: rootValue,
+                              child: Text('Racine du projet'),
+                            ),
+                          ...structuralParents.map((parent) {
+                            return DropdownMenuItem<int>(
+                              value: parent.id,
+                              child: Text(
+                                '${parent.wbsCode} · '
+                                '${_planningItemTypeLabel(parent.type)} · '
+                                '${parent.name}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }),
+                        ],
+                        onChanged: structuralParents.isEmpty && isTask
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+
+                                setDialogState(() {
+                                  selectedParentValue = value;
+                                });
+                              },
+                      ),
+                      if (isTask &&
+                          structuralParents.isEmpty) ...[
                         const SizedBox(height: 8),
                         Text(
-                          isTask
-                              ? 'Crée d’abord une Section ou une Zone avant d’ajouter une tâche dans le Gantt.'
-                              : 'Crée d’abord une Section avant d’ajouter une Zone.',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.red,
-                                  ),
+                          'Crée d’abord un élément structurel '
+                          'avant d’ajouter une tâche.',
+                          style: Theme.of(dialogContext)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ],
+                      if (isTask) ...[
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Le formulaire complet de tâche '
+                            's’ouvrira après cette étape.',
+                            style: Theme.of(dialogContext)
+                                .textTheme
+                                .bodySmall,
+                          ),
                         ),
                       ],
                     ],
-                    if (isTask) ...[
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Après validation, le formulaire de tâche va s’ouvrir. '
-                          'La tâche sera ensuite créée directement dans le parent choisi.',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () =>
+                      Navigator.of(dialogContext).pop(),
                   child: const Text('Annuler'),
                 ),
                 FilledButton(
-                  onPressed: () async {
-                    if (needsParent && selectedParent == null) return;
+                  onPressed: isTask &&
+                          structuralParents.isEmpty
+                      ? null
+                      : () {
+                          if (isTask) {
+                            if (selectedParentValue ==
+                                rootValue) {
+                              return;
+                            }
 
-                    if (isTask) {
-                      final parentId = selectedParent!.id;
+                            Navigator.of(dialogContext).pop(
+                              _CreatePlanningItemDialogResult(
+                                type: selectedType,
+                                parentId:
+                                    selectedParentValue,
+                              ),
+                            );
+                            return;
+                          }
 
-                      Navigator.of(context).pop();
+                          final name =
+                              nameController.text.trim();
 
-                      await Future<void>.delayed(Duration.zero);
+                          if (name.isEmpty) return;
 
-                      await _createTaskUnderParent(parentId: parentId);
-                      return;
-                    }
-
-                    final name = nameController.text.trim();
-
-                    if (name.isEmpty) return;
-
-                    final parentId = isZone ? selectedParent!.id : null;
-                    final sortOrder = _getNextSortOrder(
-                      items: items,
-                      parentId: parentId,
-                    );
-
-                    Navigator.of(context).pop();
-
-                    try {
-                      await _ganttApi.createPlanningItem(
-                        projectId: widget.projectId,
-                        name: name,
-                        type: selectedType,
-                        parentId: parentId,
-                        sortOrder: sortOrder,
-                      );
-
-                      if (!mounted) return;
-
-                      setState(() {
-                        _loadGantt();
-                      });
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            selectedType == 'Section'
-                                ? 'Section ajoutée au Gantt.'
-                                : 'Zone ajoutée au Gantt.',
-                          ),
-                        ),
-                      );
-                    } catch (error) {
-                      if (!mounted) return;
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Erreur création : $error'),
-                        ),
-                      );
-                    }
-                  },
-                  child: Text(isTask ? 'Continuer' : 'Ajouter'),
+                          Navigator.of(dialogContext).pop(
+                            _CreatePlanningItemDialogResult(
+                              type: selectedType,
+                              name: name,
+                              parentId:
+                                  selectedParentValue ==
+                                          rootValue
+                                      ? null
+                                      : selectedParentValue,
+                            ),
+                          );
+                        },
+                  child: Text(
+                    isTask ? 'Continuer' : 'Ajouter',
+                  ),
                 ),
               ],
             );
@@ -712,85 +1009,221 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     );
 
     nameController.dispose();
+
+    if (!mounted || dialogResult == null) return;
+
+    if (dialogResult.isTask) {
+      await _createTaskUnderParent(
+        parentId: dialogResult.parentId!,
+      );
+      return;
+    }
+
+    final sortOrder = _getNextSortOrder(
+      items: items,
+      parentId: dialogResult.parentId,
+    );
+
+    try {
+      await _ganttApi.createPlanningItem(
+        projectId: widget.projectId,
+        name: dialogResult.name!,
+        type: dialogResult.type,
+        parentId: dialogResult.parentId,
+        sortOrder: sortOrder,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _loadGantt();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_planningItemTypeLabel(dialogResult.type)} '
+            'ajouté au Gantt.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur création : $error'),
+        ),
+      );
+    }
   }
 
   Future<void> _moveItem({
     required StructuredGanttItem item,
     required List<StructuredGanttItem> possibleParents,
   }) async {
-    StructuredGanttItem? selectedParent;
+    const rootValue = -1;
 
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Déplacer "${item.name}"'),
-          content: StatefulBuilder(
-            builder: (context, setDialogState) {
-              return DropdownButtonFormField<StructuredGanttItem>(
-                value: selectedParent,
-                decoration: const InputDecoration(
-                  labelText: 'Déplacer vers',
-                  border: OutlineInputBorder(),
-                ),
-                items: possibleParents.map((parent) {
-                  return DropdownMenuItem(
-                    value: parent,
-                    child: Text('${parent.wbsCode} - ${parent.name}'),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setDialogState(() {
-                    selectedParent = value;
-                  });
-                },
+    final canMoveToRoot =
+        _isStructuralPlanningItemType(item.type);
+
+    int selectedParentValue = item.parentId ??
+        (canMoveToRoot
+            ? rootValue
+            : possibleParents.isEmpty
+                ? rootValue
+                : possibleParents.first.id);
+
+    final validSelection =
+        selectedParentValue == rootValue
+            ? canMoveToRoot
+            : possibleParents.any(
+                (parent) =>
+                    parent.id == selectedParentValue,
               );
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Annuler'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                if (selectedParent == null) return;
 
-                Navigator.of(context).pop();
+    if (!validSelection) {
+      selectedParentValue = canMoveToRoot
+          ? rootValue
+          : possibleParents.isEmpty
+              ? rootValue
+              : possibleParents.first.id;
+    }
 
-                try {
-                  await _ganttApi.movePlanningItem(
-                    itemId: item.id,
-                    newParentId: selectedParent!.id,
-                  );
+    final dialogResult =
+        await showDialog<_MovePlanningItemDialogResult>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: Text('Déplacer "${item.name}"'),
+              content: SizedBox(
+                width: 500,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<int>(
+                      initialValue: selectedParentValue,
+                      decoration: const InputDecoration(
+                        labelText: 'Nouveau parent',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: <DropdownMenuItem<int>>[
+                        if (canMoveToRoot)
+                          const DropdownMenuItem<int>(
+                            value: rootValue,
+                            child: Text('Racine du projet'),
+                          ),
+                        ...possibleParents.map((parent) {
+                          return DropdownMenuItem<int>(
+                            value: parent.id,
+                            child: Text(
+                              '${parent.wbsCode} · '
+                              '${_planningItemTypeLabel(parent.type)} · '
+                              '${parent.name}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
 
-                  if (!mounted) return;
-
-                  setState(() {
-                    _loadGantt();
-                  });
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Tâche déplacée avec succès.'),
+                        setDialogState(() {
+                          selectedParentValue = value;
+                        });
+                      },
                     ),
-                  );
-                } catch (error) {
-                  if (!mounted) return;
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Erreur déplacement : $error'),
+                    if (!canMoveToRoot &&
+                        possibleParents.isEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Aucun parent structurel valide '
+                        'n’est disponible.',
+                        style: Theme.of(dialogContext)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'L’élément lui-même et tous ses '
+                        'descendants sont exclus de la liste.',
+                        style: Theme.of(dialogContext)
+                            .textTheme
+                            .bodySmall,
+                      ),
                     ),
-                  );
-                }
-              },
-              child: const Text('Déplacer'),
-            ),
-          ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () =>
+                      Navigator.of(dialogContext).pop(),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  onPressed: !canMoveToRoot &&
+                          possibleParents.isEmpty
+                      ? null
+                      : () {
+                          Navigator.of(dialogContext).pop(
+                            _MovePlanningItemDialogResult(
+                              newParentId:
+                                  selectedParentValue ==
+                                          rootValue
+                                      ? null
+                                      : selectedParentValue,
+                            ),
+                          );
+                        },
+                  child: const Text('Déplacer'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
+
+    if (!mounted || dialogResult == null) return;
+
+    try {
+      await _ganttApi.movePlanningItem(
+        itemId: item.id,
+        newParentId: dialogResult.newParentId,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _loadGantt();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '"${item.name}" déplacé avec succès.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur déplacement : $error'),
+        ),
+      );
+    }
   }
 
   @override
@@ -825,6 +1258,15 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
           data: data,
           calendar: loadedData.calendar,
           exceptions: loadedData.exceptions,
+          periods: loadedData.periods,
+          baselines: loadedData.baselines,
+          baselineComparison:
+              loadedData.baselineComparison,
+          selectedBaselineId:
+              loadedData.selectedBaselineId,
+          showBaselineBars: _showBaselineBars,
+          onBaselineChanged: _changeBaseline,
+          onToggleBaselineBars: _toggleBaselineBars,
           dayWidth: _dayWidth,
           displayMode: _displayMode,
           onDisplayModeChanged: _changeDisplayMode,
@@ -846,6 +1288,13 @@ class _StructuredGanttChart extends StatefulWidget {
   final StructuredGanttResponse data;
   final ProjectCalendarModel calendar;
   final List<ProjectCalendarExceptionModel> exceptions;
+  final List<ProjectCalendarPeriodModel> periods;
+  final List<ProjectBaselineModel> baselines;
+  final ProjectBaselineComparisonModel? baselineComparison;
+  final int? selectedBaselineId;
+  final bool showBaselineBars;
+  final ValueChanged<int?> onBaselineChanged;
+  final VoidCallback onToggleBaselineBars;
   final double dayWidth;
   final StructuredGanttDisplayMode displayMode;
   final ValueChanged<StructuredGanttDisplayMode?> onDisplayModeChanged;
@@ -865,6 +1314,13 @@ class _StructuredGanttChart extends StatefulWidget {
     required this.data,
     required this.calendar,
     required this.exceptions,
+    required this.periods,
+    required this.baselines,
+    required this.baselineComparison,
+    required this.selectedBaselineId,
+    required this.showBaselineBars,
+    required this.onBaselineChanged,
+    required this.onToggleBaselineBars,
     required this.dayWidth,
     required this.displayMode,
     required this.onDisplayModeChanged,
@@ -889,6 +1345,154 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
 
   bool _isSyncingLeft = false;
   bool _isSyncingRight = false;
+  bool _isTaskPanelCompact = false;
+
+  bool _showStartColumn = true;
+  bool _showEndColumn = true;
+  bool _showDurationColumn = true;
+  bool _showProgressColumn = true;
+  bool _showDeadlineColumn = true;
+
+  int get _visibleDetailColumnCount {
+    var count = 0;
+
+    if (_showStartColumn) count++;
+    if (_showEndColumn) count++;
+    if (_showDurationColumn) count++;
+    if (_showProgressColumn) count++;
+    if (_showDeadlineColumn) count++;
+
+    return count;
+  }
+
+  void _toggleTaskPanel() {
+    setState(() {
+      _isTaskPanelCompact = !_isTaskPanelCompact;
+    });
+  }
+
+  Future<void> _showColumnSelector() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void updateColumn(VoidCallback update) {
+              setState(update);
+              setDialogState(() {});
+            }
+
+            void setAllColumns(bool visible) {
+              updateColumn(() {
+                _showStartColumn = visible;
+                _showEndColumn = visible;
+                _showDurationColumn = visible;
+                _showProgressColumn = visible;
+                _showDeadlineColumn = visible;
+              });
+            }
+
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.view_column_outlined),
+                  SizedBox(width: 10),
+                  Text('Colonnes du Gantt'),
+                ],
+              ),
+              content: SizedBox(
+                width: 380,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CheckboxListTile(
+                      value: _showStartColumn,
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Début'),
+                      onChanged: (value) {
+                        updateColumn(() {
+                          _showStartColumn = value ?? false;
+                        });
+                      },
+                    ),
+                    CheckboxListTile(
+                      value: _showEndColumn,
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Fin'),
+                      onChanged: (value) {
+                        updateColumn(() {
+                          _showEndColumn = value ?? false;
+                        });
+                      },
+                    ),
+                    CheckboxListTile(
+                      value: _showDurationColumn,
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Durée'),
+                      onChanged: (value) {
+                        updateColumn(() {
+                          _showDurationColumn = value ?? false;
+                        });
+                      },
+                    ),
+                    CheckboxListTile(
+                      value: _showProgressColumn,
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Avancement'),
+                      onChanged: (value) {
+                        updateColumn(() {
+                          _showProgressColumn = value ?? false;
+                        });
+                      },
+                    ),
+                    CheckboxListTile(
+                      value: _showDeadlineColumn,
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Deadline'),
+                      onChanged: (value) {
+                        updateColumn(() {
+                          _showDeadlineColumn = value ?? false;
+                        });
+                      },
+                    ),
+                    const Divider(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => setAllColumns(false),
+                            child: const Text('Masquer tout'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton.tonal(
+                            onPressed: () => setAllColumns(true),
+                            child: const Text('Tout afficher'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Terminé'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -975,37 +1579,69 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
   ({DateTime start, DateTime end}) _resolveProjectRange(
     List<StructuredGanttItem> taskItems,
   ) {
-    if (taskItems.isNotEmpty) {
-      final taskStart = _dateOnly(
-        taskItems
-            .map((item) => item.task!.startDate)
-            .reduce((a, b) => a.isBefore(b) ? a : b),
+    final rangeDates = <DateTime>[];
+
+    for (final item in taskItems) {
+      final task = item.task;
+
+      if (task == null) continue;
+
+      rangeDates.add(_dateOnly(task.startDate));
+      rangeDates.add(_dateOnly(task.endDate));
+    }
+
+    final comparison = widget.baselineComparison;
+
+    if (comparison != null) {
+      for (final row in comparison.rows) {
+        if (row.baselineStartDate != null) {
+          rangeDates.add(
+            _dateOnly(row.baselineStartDate!),
+          );
+        }
+
+        if (row.baselineEndDate != null) {
+          rangeDates.add(
+            _dateOnly(row.baselineEndDate!),
+          );
+        }
+      }
+    }
+
+    if (rangeDates.isNotEmpty) {
+      final rangeStart = rangeDates.reduce(
+        (a, b) => a.isBefore(b) ? a : b,
       );
 
-      final taskEnd = _dateOnly(
-        taskItems
-            .map((item) => item.task!.endDate)
-            .reduce((a, b) => a.isAfter(b) ? a : b),
+      final rangeEnd = rangeDates.reduce(
+        (a, b) => a.isAfter(b) ? a : b,
       );
 
       return (
-        start: taskStart,
-        end: taskEnd.isAfter(taskStart)
-            ? taskEnd
-            : taskStart.add(const Duration(days: 30)),
+        start: rangeStart,
+        end: rangeEnd.isAfter(rangeStart)
+            ? rangeEnd
+            : rangeStart.add(
+                const Duration(days: 30),
+              ),
       );
     }
 
     final fallbackStart =
-        _tryReadProjectDate('projectStartDate') ?? _dateOnly(DateTime.now());
+        _tryReadProjectDate('projectStartDate') ??
+            _dateOnly(DateTime.now());
 
-    final fallbackEnd = _tryReadProjectDate('projectEndDate');
+    final fallbackEnd =
+        _tryReadProjectDate('projectEndDate');
 
     return (
       start: fallbackStart,
-      end: fallbackEnd != null && fallbackEnd.isAfter(fallbackStart)
+      end: fallbackEnd != null &&
+              fallbackEnd.isAfter(fallbackStart)
           ? fallbackEnd
-          : fallbackStart.add(const Duration(days: 30)),
+          : fallbackStart.add(
+              const Duration(days: 30),
+            ),
     );
   }
 
@@ -1068,15 +1704,77 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
     }
   }
 
+  Set<int> _collectDescendantIds({
+    required List<StructuredGanttItem> items,
+    required int itemId,
+  }) {
+    final descendantIds = <int>{};
+    final pendingIds = <int>[itemId];
+
+    while (pendingIds.isNotEmpty) {
+      final currentId = pendingIds.removeLast();
+
+      final children = items.where(
+        (candidate) => candidate.parentId == currentId,
+      );
+
+      for (final child in children) {
+        if (descendantIds.add(child.id)) {
+          pendingIds.add(child.id);
+        }
+      }
+    }
+
+    return descendantIds;
+  }
+
+  List<StructuredGanttItem> _possibleParentsForItem({
+    required List<StructuredGanttItem> items,
+    required StructuredGanttItem item,
+  }) {
+    final descendantIds = _collectDescendantIds(
+      items: items,
+      itemId: item.id,
+    );
+
+    return items.where((candidate) {
+      if (!_isStructuralPlanningItemType(candidate.type)) {
+        return false;
+      }
+
+      if (candidate.id == item.id) {
+        return false;
+      }
+
+      if (descendantIds.contains(candidate.id)) {
+        return false;
+      }
+
+      return true;
+    }).toList();
+  }
+
+  ProjectBaselineComparisonRowModel? _baselineRowForTask(
+    int taskId,
+  ) {
+    final comparison = widget.baselineComparison;
+
+    if (comparison == null) return null;
+
+    for (final row in comparison.rows) {
+      if (row.taskId == taskId) {
+        return row;
+      }
+    }
+
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = widget.data.items;
 
     final taskItems = items.where((item) => item.task != null).toList();
-
-    final possibleParents = items
-        .where((item) => item.type == 'Section' || item.type == 'Zone')
-        .toList();
 
     final resolvedProjectRange = _resolveProjectRange(taskItems);
 
@@ -1095,6 +1793,32 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
     final totalDays = totalDaysRaw <= 0 ? 1 : totalDaysRaw;
 
     final chartWidth = (totalDays + 2) * widget.dayWidth;
+
+    var visibleDetailColumnsWidth = 0.0;
+
+    if (_showStartColumn) {
+      visibleDetailColumnsWidth += _ganttStartColumnWidth;
+    }
+
+    if (_showEndColumn) {
+      visibleDetailColumnsWidth += _ganttEndColumnWidth;
+    }
+
+    if (_showDurationColumn) {
+      visibleDetailColumnsWidth += _ganttDurationColumnWidth;
+    }
+
+    if (_showProgressColumn) {
+      visibleDetailColumnsWidth += _ganttProgressColumnWidth;
+    }
+
+    if (_showDeadlineColumn) {
+      visibleDetailColumnsWidth += _ganttDeadlineColumnWidth;
+    }
+
+    final taskPanelWidth = _isTaskPanelCompact
+        ? _ganttLeftPanelBaseWidth
+        : _ganttLeftPanelBaseWidth + visibleDetailColumnsWidth;
 
     return Column(
       children: [
@@ -1119,7 +1843,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
               SizedBox(
                 width: 150,
                 child: DropdownButtonFormField<StructuredGanttDisplayMode>(
-                  value: widget.displayMode,
+                  initialValue: widget.displayMode,
                   decoration: const InputDecoration(
                     labelText: 'Affichage',
                     border: OutlineInputBorder(),
@@ -1132,6 +1856,116 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                     );
                   }).toList(),
                   onChanged: widget.onDisplayModeChanged,
+                ),
+              ),
+              const SizedBox(width: 8),
+              PopupMenuButton<int>(
+                tooltip: 'Choisir la baseline affichée',
+                initialValue:
+                    widget.selectedBaselineId ?? 0,
+                onSelected: (value) =>
+                    widget.onBaselineChanged(value),
+                itemBuilder: (context) {
+                  return <PopupMenuEntry<int>>[
+                    const PopupMenuItem<int>(
+                      value: 0,
+                      child: Text('Aucune baseline'),
+                    ),
+                    ...widget.baselines.map((baseline) {
+                      return PopupMenuItem<int>(
+                        value: baseline.id,
+                        child: Row(
+                          children: [
+                            Icon(
+                              baseline.isActive
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_unchecked,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                baseline.name,
+                                overflow:
+                                    TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ];
+                },
+                child: Container(
+                  constraints: const BoxConstraints(
+                    maxWidth: 210,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outline,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.layers_outlined,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 7),
+                      Flexible(
+                        child: Text(
+                          widget.baselineComparison == null
+                              ? 'Baseline'
+                              : widget.baselineComparison!
+                                  .baselineName,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.arrow_drop_down,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (widget.baselineComparison != null)
+                IconButton(
+                  tooltip: widget.showBaselineBars
+                      ? 'Masquer les barres fantômes'
+                      : 'Afficher les barres fantômes',
+                  onPressed: widget.onToggleBaselineBars,
+                  icon: Icon(
+                    widget.showBaselineBars
+                        ? Icons.visibility
+                        : Icons.visibility_off,
+                  ),
+                ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _showColumnSelector,
+                icon: const Icon(Icons.view_column_outlined),
+                label: Text('Colonnes ($_visibleDetailColumnCount)'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _toggleTaskPanel,
+                icon: Icon(
+                  _isTaskPanelCompact
+                      ? Icons.view_sidebar_outlined
+                      : Icons.view_sidebar,
+                ),
+                label: Text(
+                  _isTaskPanelCompact ? 'Afficher détails' : 'Réduire le volet',
                 ),
               ),
               const SizedBox(width: 8),
@@ -1169,32 +2003,166 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
             ],
           ),
         ),
+        if (widget.baselineComparison != null &&
+            widget.showBaselineBars)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              8,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outline
+                        .withValues(alpha: 0.40),
+                    borderRadius:
+                        BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Baseline : '
+                  '${widget.baselineComparison!.baselineName}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall,
+                ),
+                const SizedBox(width: 18),
+                Container(
+                  width: 28,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary,
+                    borderRadius:
+                        BorderRadius.circular(5),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Planning actuel',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall,
+                ),
+              ],
+            ),
+          ),
         Expanded(
           child: Row(
             children: [
-              SizedBox(
-                width: 390,
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                width: taskPanelWidth,
                 child: Column(
                   children: [
                     Container(
                       height: _ganttHeaderHeight,
                       alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                       color:
                           Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: const Row(
+                      child: Row(
                         children: [
-                          SizedBox(
-                            width: 70,
+                          const SizedBox(
+                            width: 60,
                             child: Text(
                               'WBS',
-                              style: TextStyle(fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
                             ),
                           ),
-                          Expanded(
+                          const Expanded(
                             child: Text(
                               'Élément',
-                              style: TextStyle(fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                          if (!_isTaskPanelCompact &&
+                              _showStartColumn)
+                            const SizedBox(
+                              width: _ganttStartColumnWidth,
+                              child: Text(
+                                'Début',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          if (!_isTaskPanelCompact &&
+                              _showEndColumn)
+                            const SizedBox(
+                              width: _ganttEndColumnWidth,
+                              child: Text(
+                                'Fin',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          if (!_isTaskPanelCompact &&
+                              _showDurationColumn)
+                            const SizedBox(
+                              width: _ganttDurationColumnWidth,
+                              child: Text(
+                                'Durée',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          if (!_isTaskPanelCompact &&
+                              _showProgressColumn)
+                            const SizedBox(
+                              width: _ganttProgressColumnWidth,
+                              child: Text(
+                                'Avanc.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          if (!_isTaskPanelCompact &&
+                              _showDeadlineColumn)
+                            const SizedBox(
+                              width: _ganttDeadlineColumnWidth,
+                              child: Text(
+                                'Deadline',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          const SizedBox(
+                            width: 100,
+                            child: Text(
+                              'Actions',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
                             ),
                           ),
                         ],
@@ -1206,7 +2174,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                               child: Padding(
                                 padding: const EdgeInsets.all(16),
                                 child: Text(
-                                  'Aucune structure pour le moment.\nAjoute une section ou synchronise les tâches.',
+                                  'Aucune structure pour le moment.\nAjoute un élément ou synchronise les tâches.',
                                   textAlign: TextAlign.center,
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
@@ -1220,9 +2188,17 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
 
                                 return _StructuredGanttLeftRow(
                                   item: item,
-                                  possibleParents: possibleParents
-                                      .where((parent) => parent.id != item.id)
-                                      .toList(),
+                                  compactPanel: _isTaskPanelCompact,
+                                  showStartColumn: _showStartColumn,
+                                  showEndColumn: _showEndColumn,
+                                  showDurationColumn: _showDurationColumn,
+                                  showProgressColumn: _showProgressColumn,
+                                  showDeadlineColumn: _showDeadlineColumn,
+                                  possibleParents:
+                                      _possibleParentsForItem(
+                                    items: items,
+                                    item: item,
+                                  ),
                                   onMoveItem: widget.onMoveItem,
                                   onEditTask: widget.onEditTask,
                                   onDeleteTask: widget.onDeleteTask,
@@ -1232,6 +2208,10 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                     ),
                   ],
                 ),
+              ),
+              Container(
+                width: 1,
+                color: Theme.of(context).dividerColor,
               ),
               Expanded(
                 child: LayoutBuilder(
@@ -1261,6 +2241,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                                 dayWidth: widget.dayWidth,
                                 calendar: widget.calendar,
                                 exceptions: widget.exceptions,
+                                periods: widget.periods,
                               ),
                               Expanded(
                                 child: items.isEmpty
@@ -1270,6 +2251,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                                         dayWidth: widget.dayWidth,
                                         calendar: widget.calendar,
                                         exceptions: widget.exceptions,
+                                        periods: widget.periods,
                                       )
                                     : ListView.builder(
                                         controller: _rightVerticalController,
@@ -1277,13 +2259,24 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                                         itemBuilder: (context, index) {
                                           final item = items[index];
 
+                                          final baselineRow =
+                                              item.task == null ||
+                                                      !widget
+                                                          .showBaselineBars
+                                                  ? null
+                                                  : _baselineRowForTask(
+                                                      item.task!.id,
+                                                    );
+
                                           return _StructuredGanttBarRow(
                                             item: item,
+                                            baselineRow: baselineRow,
                                             visibleStart: visibleStart,
                                             totalDays: totalDays,
                                             dayWidth: widget.dayWidth,
                                             calendar: widget.calendar,
                                             exceptions: widget.exceptions,
+                                            periods: widget.periods,
                                           );
                                         },
                                       ),
@@ -1311,6 +2304,7 @@ class _StructuredGanttEmptyBarArea extends StatelessWidget {
   final double dayWidth;
   final ProjectCalendarModel calendar;
   final List<ProjectCalendarExceptionModel> exceptions;
+  final List<ProjectCalendarPeriodModel> periods;
 
   const _StructuredGanttEmptyBarArea({
     required this.visibleStart,
@@ -1318,6 +2312,7 @@ class _StructuredGanttEmptyBarArea extends StatelessWidget {
     required this.dayWidth,
     required this.calendar,
     required this.exceptions,
+    required this.periods,
   });
 
   @override
@@ -1334,31 +2329,41 @@ class _StructuredGanttEmptyBarArea extends StatelessWidget {
               date: date,
               calendar: calendar,
               exceptions: exceptions,
+              periods: periods,
             );
             final exception = _findExceptionForDate(
               date: date,
               exceptions: exceptions,
             );
+            final period = _findPeriodForDate(
+              date: date,
+              periods: periods,
+            );
 
             return Container(
               width: dayWidth,
               decoration: BoxDecoration(
-                color: !isWorkingDay
+                color: period != null && exception == null
                     ? Theme.of(context)
                         .colorScheme
-                        .surfaceContainerHighest
-                        .withOpacity(0.55)
-                    : exception != null
+                        .errorContainer
+                        .withValues(alpha: 0.32)
+                    : !isWorkingDay
+                        ? Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.55)
+                        : exception != null
                         ? Theme.of(context)
                             .colorScheme
                             .primaryContainer
-                            .withOpacity(0.20)
+                            .withValues(alpha: 0.20)
                         : null,
                 border: Border(
                   left: BorderSide(
                     color: isMajor
-                        ? Theme.of(context).dividerColor.withOpacity(0.7)
-                        : Theme.of(context).dividerColor.withOpacity(0.25),
+                        ? Theme.of(context).dividerColor.withValues(alpha: 0.7)
+                        : Theme.of(context).dividerColor.withValues(alpha: 0.25),
                   ),
                 ),
               ),
@@ -1369,10 +2374,10 @@ class _StructuredGanttEmptyBarArea extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface.withOpacity(0.88),
+              color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: Theme.of(context).dividerColor.withOpacity(0.35),
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
               ),
             ),
             child: Text(
@@ -1388,6 +2393,12 @@ class _StructuredGanttEmptyBarArea extends StatelessWidget {
 
 class _StructuredGanttLeftRow extends StatelessWidget {
   final StructuredGanttItem item;
+  final bool compactPanel;
+  final bool showStartColumn;
+  final bool showEndColumn;
+  final bool showDurationColumn;
+  final bool showProgressColumn;
+  final bool showDeadlineColumn;
   final List<StructuredGanttItem> possibleParents;
   final Future<void> Function({
     required StructuredGanttItem item,
@@ -1398,6 +2409,12 @@ class _StructuredGanttLeftRow extends StatelessWidget {
 
   const _StructuredGanttLeftRow({
     required this.item,
+    required this.compactPanel,
+    required this.showStartColumn,
+    required this.showEndColumn,
+    required this.showDurationColumn,
+    required this.showProgressColumn,
+    required this.showDeadlineColumn,
     required this.possibleParents,
     required this.onMoveItem,
     required this.onEditTask,
@@ -1408,22 +2425,33 @@ class _StructuredGanttLeftRow extends StatelessWidget {
     switch (item.type) {
       case 'Section':
         return Icons.folder;
+      case 'Phase':
+        return Icons.timeline_outlined;
       case 'Zone':
         return Icons.folder_open;
+      case 'Floor':
+        return Icons.layers_outlined;
+      case 'Lot':
+        return Icons.inventory_2_outlined;
       case 'Task':
         return Icons.task_alt;
       default:
-        return Icons.circle;
+        return Icons.account_tree_outlined;
     }
   }
 
   Color _getIconColor(BuildContext context) {
-    if (item.type == 'Section') {
-      return Colors.blueGrey;
-    }
-
-    if (item.type == 'Zone') {
-      return Colors.indigo;
+    switch (item.type) {
+      case 'Section':
+        return Colors.blueGrey;
+      case 'Phase':
+        return Colors.deepPurple;
+      case 'Zone':
+        return Colors.indigo;
+      case 'Floor':
+        return Colors.teal;
+      case 'Lot':
+        return Colors.brown;
     }
 
     final task = item.task;
@@ -1448,164 +2476,264 @@ class _StructuredGanttLeftRow extends StatelessWidget {
   }
 
   FontWeight _getFontWeight() {
-    if (item.type == 'Section') return FontWeight.bold;
-    if (item.type == 'Zone') return FontWeight.w600;
+    if (item.type == 'Section') {
+      return FontWeight.bold;
+    }
+
+    if (_isStructuralPlanningItemType(item.type)) {
+      return FontWeight.w600;
+    }
+
     return FontWeight.normal;
   }
 
-  String _formatTaskSubtitle(StructuredGanttTask task) {
-    final dates =
-        '${DateFormat('dd/MM').format(task.startDate)} → ${DateFormat('dd/MM').format(task.endDate)}';
+  String _taskStatus(StructuredGanttTask task) {
+    if (task.isDone) {
+      return 'Terminée';
+    }
 
     if (task.isLate) {
-      return '$dates · Retard +${task.delayDays}j · Float ${task.totalFloat}';
+      return 'En retard';
     }
 
     if (task.isCritical) {
-      return '$dates · Critique · Float ${task.totalFloat}';
+      return 'Critique';
     }
 
-    return '$dates · ${task.progressPercent}% · Float ${task.totalFloat}';
+    return 'En cours';
+  }
+
+  Widget _textCell({
+    required double width,
+    required String text,
+    TextAlign textAlign = TextAlign.left,
+    TextStyle? style,
+  }) {
+    return SizedBox(
+      width: width,
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: textAlign,
+        style: style,
+      ),
+    );
+  }
+
+  Widget _actionButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(
+        width: 32,
+        height: 32,
+      ),
+      visualDensity: VisualDensity.compact,
+      icon: Icon(
+        icon,
+        size: 17,
+      ),
+      onPressed: onPressed,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final task = item.task;
+    final rowFontWeight = _getFontWeight();
+
+    final taskTooltip = task == null
+        ? item.name
+        : '${item.name}\n'
+            'Statut : ${_taskStatus(task)}\n'
+            'Début : ${DateFormat('dd/MM/yyyy').format(task.startDate)}\n'
+            'Fin : ${DateFormat('dd/MM/yyyy').format(task.endDate)}\n'
+            'Durée : ${task.duration} jour(s) ouvré(s)\n'
+            'Progression : ${task.progressPercent}%\n'
+            'Float : ${task.totalFloat}\n'
+            'Deadline : ${task.deadline == null ? '-' : DateFormat('dd/MM/yyyy').format(task.deadline!)}\n'
+            'Retard : ${task.isLate ? '+${task.delayDays}j' : '-'}';
+
+    final taskTextColor = task == null
+        ? null
+        : task.isLate
+            ? Colors.red
+            : task.isCritical
+                ? Colors.orange.shade800
+                : null;
 
     return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: _ganttRowHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
         color: item.type == 'Section'
             ? Theme.of(context)
                 .colorScheme
                 .surfaceContainerHighest
-                .withOpacity(0.45)
-            : item.type == 'Zone'
+                .withValues(alpha: 0.45)
+            : _isStructuralPlanningItemType(item.type)
                 ? Theme.of(context)
                     .colorScheme
                     .surfaceContainerHighest
-                    .withOpacity(0.25)
+                    .withValues(alpha: 0.22)
                 : null,
         border: Border(
           bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withOpacity(0.4),
+            color: Theme.of(context)
+                .dividerColor
+                .withValues(alpha: 0.4),
           ),
         ),
       ),
       child: Row(
         children: [
-          SizedBox(
-            width: 70,
-            child: Text(
-              item.wbsCode,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontWeight: _getFontWeight(),
-                fontSize: 12,
-              ),
+          _textCell(
+            width: 60,
+            text: item.wbsCode,
+            style: TextStyle(
+              fontWeight: rowFontWeight,
+              fontSize: 11,
             ),
           ),
           Expanded(
             child: Padding(
-              padding: EdgeInsets.only(left: item.level * 18.0),
-              child: Row(
-                children: [
-                  Icon(
-                    _getIcon(),
-                    size: 18,
-                    color: _getIconColor(context),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Tooltip(
-                      message: task == null
-                          ? item.name
-                          : '${item.name}\n'
-                              'Tâche liée : ${task.title}\n'
-                              'Statut : ${task.isDone ? 'Terminée' : task.isLate ? 'En retard' : task.isCritical ? 'Critique' : 'En cours'}\n'
-                              'Progression : ${task.progressPercent}%\n'
-                              'Float : ${task.totalFloat}\n'
-                              'Deadline : ${task.deadline == null ? '-' : DateFormat('dd/MM/yyyy').format(task.deadline!)}\n'
-                              'Retard : ${task.isLate ? '+${task.delayDays}j' : '-'}',
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.name,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight: _getFontWeight(),
-                            ),
-                          ),
-                          if (task != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              _formatTaskSubtitle(task),
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: task.isLate
-                                        ? Colors.red
-                                        : task.isCritical
-                                            ? Colors.orange.shade800
-                                            : Colors.grey.shade700,
-                                    fontSize: 11,
-                                    fontWeight: task.isLate
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                  ),
-                            ),
-                          ],
-                        ],
-                      ),
+              padding: EdgeInsets.only(
+                left: item.level * 14.0,
+                right: 8,
+              ),
+              child: Tooltip(
+                message: taskTooltip,
+                child: Row(
+                  children: [
+                    Icon(
+                      _getIcon(),
+                      size: 17,
+                      color: _getIconColor(context),
                     ),
-                  ),
-                  if (item.type == 'Task') ...[
-                    const SizedBox(width: 4),
-                    IconButton(
-                      tooltip: 'Modifier',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(
-                        Icons.edit_outlined,
-                        size: 18,
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        item.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: rowFontWeight,
+                          fontSize: 12,
+                          color: taskTextColor,
+                        ),
                       ),
-                      onPressed: () {
-                        onEditTask(item);
-                      },
-                    ),
-                    IconButton(
-                      tooltip: 'Déplacer',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(
-                        Icons.drive_file_move_outline,
-                        size: 18,
-                      ),
-                      onPressed: () {
-                        onMoveItem(
-                          item: item,
-                          possibleParents: possibleParents,
-                        );
-                      },
-                    ),
-                    IconButton(
-                      tooltip: 'Supprimer',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        size: 18,
-                      ),
-                      onPressed: () {
-                        onDeleteTask(item);
-                      },
                     ),
                   ],
-                ],
+                ),
               ),
             ),
+          ),
+          if (!compactPanel && showStartColumn)
+            _textCell(
+              width: _ganttStartColumnWidth,
+              text: task == null
+                  ? ''
+                  : DateFormat('dd/MM/yy').format(task.startDate),
+              style: TextStyle(
+                fontSize: 11,
+                color: taskTextColor,
+              ),
+            ),
+          if (!compactPanel && showEndColumn)
+            _textCell(
+              width: _ganttEndColumnWidth,
+              text: task == null
+                  ? ''
+                  : DateFormat('dd/MM/yy').format(task.endDate),
+              style: TextStyle(
+                fontSize: 11,
+                color: taskTextColor,
+              ),
+            ),
+          if (!compactPanel && showDurationColumn)
+            _textCell(
+              width: _ganttDurationColumnWidth,
+              text: task == null ? '' : '${task.duration}j',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11),
+            ),
+          if (!compactPanel && showProgressColumn)
+            _textCell(
+              width: _ganttProgressColumnWidth,
+              text: task == null ? '' : '${task.progressPercent}%',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight:
+                    task?.isDone == true ? FontWeight.bold : FontWeight.normal,
+                color: task?.isDone == true ? Colors.green : taskTextColor,
+              ),
+            ),
+          if (!compactPanel && showDeadlineColumn)
+            _textCell(
+              width: _ganttDeadlineColumnWidth,
+              text: task?.deadline == null
+                  ? ''
+                  : DateFormat('dd/MM/yy').format(task!.deadline!),
+              style: TextStyle(
+                fontSize: 11,
+                color: task?.isLate == true ? Colors.red : null,
+                fontWeight:
+                    task?.isLate == true ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          SizedBox(
+            width: 100,
+            child: item.type == 'Task'
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _actionButton(
+                        tooltip: 'Modifier',
+                        icon: Icons.edit_outlined,
+                        onPressed: () {
+                          onEditTask(item);
+                        },
+                      ),
+                      _actionButton(
+                        tooltip: 'Déplacer',
+                        icon: Icons.drive_file_move_outline,
+                        onPressed: () {
+                          onMoveItem(
+                            item: item,
+                            possibleParents: possibleParents,
+                          );
+                        },
+                      ),
+                      _actionButton(
+                        tooltip: 'Supprimer',
+                        icon: Icons.delete_outline,
+                        onPressed: () {
+                          onDeleteTask(item);
+                        },
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _actionButton(
+                        tooltip: 'Déplacer',
+                        icon: Icons.drive_file_move_outline,
+                        onPressed: () {
+                          onMoveItem(
+                            item: item,
+                            possibleParents: possibleParents,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),
@@ -1619,6 +2747,7 @@ class _StructuredGanttDateHeader extends StatelessWidget {
   final double dayWidth;
   final ProjectCalendarModel calendar;
   final List<ProjectCalendarExceptionModel> exceptions;
+  final List<ProjectCalendarPeriodModel> periods;
 
   const _StructuredGanttDateHeader({
     required this.visibleStart,
@@ -1626,6 +2755,7 @@ class _StructuredGanttDateHeader extends StatelessWidget {
     required this.dayWidth,
     required this.calendar,
     required this.exceptions,
+    required this.periods,
   });
 
   String _weekdayLabel(DateTime date) {
@@ -1667,36 +2797,54 @@ class _StructuredGanttDateHeader extends StatelessWidget {
             date: date,
             calendar: calendar,
             exceptions: exceptions,
+            periods: periods,
           );
           final exception = _findExceptionForDate(
             date: date,
             exceptions: exceptions,
+          );
+          final period = _findPeriodForDate(
+            date: date,
+            periods: periods,
           );
 
           final showMonth = index == 0 || date.day == 1;
           final isToday = _isSameDay(date, DateTime.now());
 
           return Tooltip(
-            message: exception == null
-                ? '${DateFormat('EEEE dd/MM/yyyy').format(date)} · ${isWorkingDay ? 'Jour ouvré' : 'Jour non ouvré'}'
-                : '${DateFormat('EEEE dd/MM/yyyy').format(date)} · ${exception.label.isEmpty ? 'Exception calendrier' : exception.label} · ${exception.isWorkingDay ? 'Jour travaillé' : 'Jour non travaillé'}',
+            message: exception != null
+                ? '${DateFormat('EEEE dd/MM/yyyy').format(date)} · '
+                    '${exception.label.isEmpty ? 'Exception calendrier' : exception.label} · '
+                    '${exception.isWorkingDay ? 'Jour travaillé' : 'Jour non travaillé'}'
+                : period != null
+                    ? '${DateFormat('EEEE dd/MM/yyyy').format(date)} · '
+                        '${period.label.isEmpty ? 'Période non ouvrée' : period.label} · '
+                        '${DateFormat('dd/MM/yyyy').format(period.startDate)} → '
+                        '${DateFormat('dd/MM/yyyy').format(period.endDate)}'
+                    : '${DateFormat('EEEE dd/MM/yyyy').format(date)} · '
+                        '${isWorkingDay ? 'Jour ouvré' : 'Jour non ouvré'}',
             child: Container(
               width: dayWidth,
               decoration: BoxDecoration(
-                color: isWorkingDay
-                    ? null
-                    : Theme.of(context)
+                color: period != null && exception == null
+                    ? Theme.of(context)
                         .colorScheme
-                        .surfaceContainerHighest
-                        .withOpacity(0.85),
+                        .errorContainer
+                        .withValues(alpha: 0.55)
+                    : isWorkingDay
+                        ? null
+                        : Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.85),
                 border: Border(
                   left: BorderSide(
                     color: date.day == 1
-                        ? Theme.of(context).dividerColor.withOpacity(0.9)
-                        : Theme.of(context).dividerColor.withOpacity(0.35),
+                        ? Theme.of(context).dividerColor.withValues(alpha: 0.9)
+                        : Theme.of(context).dividerColor.withValues(alpha: 0.35),
                   ),
                   bottom: BorderSide(
-                    color: Theme.of(context).dividerColor.withOpacity(0.45),
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.45),
                   ),
                 ),
               ),
@@ -1732,12 +2880,12 @@ class _StructuredGanttDateHeader extends StatelessWidget {
                           ? Theme.of(context)
                               .colorScheme
                               .primaryContainer
-                              .withOpacity(0.65)
+                              .withValues(alpha: 0.65)
                           : null,
                       border: Border(
                         top: BorderSide(
                           color:
-                              Theme.of(context).dividerColor.withOpacity(0.25),
+                              Theme.of(context).dividerColor.withValues(alpha: 0.25),
                         ),
                       ),
                     ),
@@ -1752,7 +2900,7 @@ class _StructuredGanttDateHeader extends StatelessWidget {
                                     .textTheme
                                     .bodySmall
                                     ?.color
-                                    ?.withOpacity(0.55),
+                                    ?.withValues(alpha: 0.55),
                           ),
                     ),
                   ),
@@ -1775,7 +2923,7 @@ class _StructuredGanttDateHeader extends StatelessWidget {
                                           .textTheme
                                           .labelSmall
                                           ?.color
-                                          ?.withOpacity(0.55),
+                                          ?.withValues(alpha: 0.55),
                                 ),
                           ),
                           if (exception != null)
@@ -1787,6 +2935,12 @@ class _StructuredGanttDateHeader extends StatelessWidget {
                               color: exception.isWorkingDay
                                   ? Theme.of(context).colorScheme.primary
                                   : Colors.red,
+                            )
+                          else if (period != null)
+                            const Icon(
+                              Icons.date_range,
+                              size: 10,
+                              color: Colors.red,
                             ),
                         ],
                       ),
@@ -1804,19 +2958,23 @@ class _StructuredGanttDateHeader extends StatelessWidget {
 
 class _StructuredGanttBarRow extends StatelessWidget {
   final StructuredGanttItem item;
+  final ProjectBaselineComparisonRowModel? baselineRow;
   final DateTime visibleStart;
   final int totalDays;
   final double dayWidth;
   final ProjectCalendarModel calendar;
   final List<ProjectCalendarExceptionModel> exceptions;
+  final List<ProjectCalendarPeriodModel> periods;
 
   const _StructuredGanttBarRow({
     required this.item,
+    required this.baselineRow,
     required this.visibleStart,
     required this.totalDays,
     required this.dayWidth,
     required this.calendar,
     required this.exceptions,
+    required this.periods,
   });
 
   @override
@@ -1825,22 +2983,22 @@ class _StructuredGanttBarRow extends StatelessWidget {
     final cleanVisibleStart = _dateOnly(visibleStart);
 
     return Container(
-      height: 64,
+      height: _ganttRowHeight,
       decoration: BoxDecoration(
         color: item.type == 'Section'
             ? Theme.of(context)
                 .colorScheme
                 .surfaceContainerHighest
-                .withOpacity(0.45)
-            : item.type == 'Zone'
+                .withValues(alpha: 0.45)
+            : _isStructuralPlanningItemType(item.type)
                 ? Theme.of(context)
                     .colorScheme
                     .surfaceContainerHighest
-                    .withOpacity(0.25)
+                    .withValues(alpha: 0.22)
                 : null,
         border: Border(
           bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withOpacity(0.4),
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
           ),
         ),
       ),
@@ -1854,45 +3012,132 @@ class _StructuredGanttBarRow extends StatelessWidget {
                 date: date,
                 calendar: calendar,
                 exceptions: exceptions,
+                periods: periods,
               );
               final exception = _findExceptionForDate(
                 date: date,
                 exceptions: exceptions,
               );
+              final period = _findPeriodForDate(
+                date: date,
+                periods: periods,
+              );
 
               return Container(
                 width: dayWidth,
                 decoration: BoxDecoration(
-                  color: !isWorkingDay
+                  color: period != null && exception == null
                       ? Theme.of(context)
                           .colorScheme
-                          .surfaceContainerHighest
-                          .withOpacity(0.55)
-                      : exception != null
+                          .errorContainer
+                          .withValues(alpha: 0.32)
+                      : !isWorkingDay
+                          ? Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.55)
+                          : exception != null
                           ? Theme.of(context)
                               .colorScheme
                               .primaryContainer
-                              .withOpacity(0.20)
+                              .withValues(alpha: 0.20)
                           : null,
                   border: Border(
                     left: BorderSide(
                       color: isMajor
-                          ? Theme.of(context).dividerColor.withOpacity(0.7)
-                          : Theme.of(context).dividerColor.withOpacity(0.25),
+                          ? Theme.of(context).dividerColor.withValues(alpha: 0.7)
+                          : Theme.of(context).dividerColor.withValues(alpha: 0.25),
                     ),
                   ),
                 ),
               );
             }),
           ),
+          if (baselineRow?.baselineStartDate != null &&
+              baselineRow?.baselineEndDate != null)
+            _BaselineTaskBar(
+              row: baselineRow!,
+              visibleStart: visibleStart,
+              dayWidth: dayWidth,
+            ),
           if (task != null)
             _TaskBar(
               item: item,
               task: task,
               visibleStart: visibleStart,
               dayWidth: dayWidth,
+              hasBaseline:
+                  baselineRow?.baselineStartDate != null &&
+                      baselineRow?.baselineEndDate != null,
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _BaselineTaskBar extends StatelessWidget {
+  final ProjectBaselineComparisonRowModel row;
+  final DateTime visibleStart;
+  final double dayWidth;
+
+  const _BaselineTaskBar({
+    required this.row,
+    required this.visibleStart,
+    required this.dayWidth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final baselineStart =
+        _dateOnly(row.baselineStartDate!);
+    final baselineEnd =
+        _dateOnly(row.baselineEndDate!);
+    final cleanVisibleStart =
+        _dateOnly(visibleStart);
+
+    final offsetDays = _calendarDaysBetween(
+      cleanVisibleStart,
+      baselineStart,
+    );
+
+    final rawDays = _calendarDaysBetween(
+          baselineStart,
+          baselineEnd,
+        ) +
+        1;
+
+    final baselineDays = rawDays <= 0 ? 1 : rawDays;
+    final left = offsetDays * dayWidth;
+    final width = baselineDays * dayWidth;
+
+    return Positioned(
+      left: left < 0 ? 0 : left,
+      top: 34,
+      child: Tooltip(
+        message: 'Baseline · ${row.taskTitle}\n'
+            '${DateFormat('dd/MM/yyyy').format(baselineStart)} '
+            '→ ${DateFormat('dd/MM/yyyy').format(baselineEnd)}\n'
+            'Durée : ${row.baselineDuration}j\n'
+            'Δ début : ${row.startVarianceDays ?? 0}j\n'
+            'Δ fin : ${row.endVarianceDays ?? 0}j',
+        child: Container(
+          width: width,
+          height: 8,
+          decoration: BoxDecoration(
+            color: Theme.of(context)
+                .colorScheme
+                .outline
+                .withValues(alpha: 0.42),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: 0.20),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1903,12 +3148,14 @@ class _TaskBar extends StatelessWidget {
   final StructuredGanttTask task;
   final DateTime visibleStart;
   final double dayWidth;
+  final bool hasBaseline;
 
   const _TaskBar({
     required this.item,
     required this.task,
     required this.visibleStart,
     required this.dayWidth,
+    required this.hasBaseline,
   });
 
   Color _barColor(BuildContext context) {
@@ -1962,7 +3209,11 @@ class _TaskBar extends StatelessWidget {
     final taskEnd = _dateOnly(task.endDate);
 
     final offsetDays = _calendarDaysBetween(cleanVisibleStart, taskStart);
-    final rawTaskDays = _calendarDaysBetween(taskStart, taskEnd);
+
+    // Les dates de tâche sont inclusives :
+    // du 24 au 27, la barre couvre les 24, 25, 26 et 27.
+    final rawTaskDays =
+        _calendarDaysBetween(taskStart, taskEnd) + 1;
     final taskDays = rawTaskDays <= 0 ? 1 : rawTaskDays;
 
     final left = offsetDays * dayWidth;
@@ -1970,7 +3221,7 @@ class _TaskBar extends StatelessWidget {
 
     return Positioned(
       left: left < 0 ? 0 : left,
-      top: 14,
+      top: hasBaseline ? 6 : 11,
       child: Tooltip(
         message: '${item.name}\n'
             'Tâche liée : ${task.title}\n'
@@ -1981,21 +3232,25 @@ class _TaskBar extends StatelessWidget {
             'Deadline : ${task.deadline == null ? '-' : DateFormat('dd/MM/yyyy').format(task.deadline!)}\n'
             'Retard : ${task.isLate ? '+${task.delayDays}j' : '-'}',
         child: Container(
-          width: width < 26 ? 26 : width,
-          height: 26,
+          width: width,
+          height: hasBaseline ? 22 : 26,
           decoration: BoxDecoration(
             color: _barColor(context),
             borderRadius: BorderRadius.circular(8),
           ),
           alignment: Alignment.center,
-          child: Text(
-            _barLabel(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          child: width >= 26
+              ? Text(
+                  _barLabel(),
+                  overflow: TextOverflow.clip,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
       ),
     );

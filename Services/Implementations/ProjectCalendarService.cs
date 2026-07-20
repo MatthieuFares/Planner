@@ -9,10 +9,14 @@ namespace PlannerAPI.Services.Implementations
     public class ProjectCalendarService : IProjectCalendarService
     {
         private readonly AppDbContext _context;
+        private readonly ITaskSchedulingService _taskSchedulingService;
 
-        public ProjectCalendarService(AppDbContext context)
+        public ProjectCalendarService(
+            AppDbContext context,
+            ITaskSchedulingService taskSchedulingService)
         {
             _context = context;
+            _taskSchedulingService = taskSchedulingService;
         }
 
         public async Task<ProjectCalendarReadDto?> GetByProjectIdAsync(int projectId)
@@ -25,12 +29,16 @@ namespace PlannerAPI.Services.Implementations
             return MapToReadDto(calendar);
         }
 
-        public async Task<ProjectCalendarReadDto?> UpdateByProjectIdAsync(int projectId, ProjectCalendarUpdateDto dto)
+        public async Task<ProjectCalendarReadDto?> UpdateByProjectIdAsync(
+            int projectId,
+            ProjectCalendarUpdateDto dto)
         {
             var calendar = await GetOrCreateCalendarAsync(projectId);
 
             if (calendar == null)
                 return null;
+
+            ValidateAtLeastOneWorkingDay(dto);
 
             calendar.WorkMonday = dto.WorkMonday;
             calendar.WorkTuesday = dto.WorkTuesday;
@@ -42,12 +50,15 @@ namespace PlannerAPI.Services.Implementations
 
             await _context.SaveChangesAsync();
 
+            await _taskSchedulingService.RecalculateProjectAsync(projectId);
+
             return MapToReadDto(calendar);
         }
 
         private async Task<ProjectCalendar?> GetOrCreateCalendarAsync(int projectId)
         {
-            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projectId);
+            var projectExists = await _context.Projects
+                .AnyAsync(p => p.Id == projectId);
 
             if (!projectExists)
                 return null;
@@ -76,7 +87,28 @@ namespace PlannerAPI.Services.Implementations
             return calendar;
         }
 
-        private static ProjectCalendarReadDto MapToReadDto(ProjectCalendar calendar)
+        private static void ValidateAtLeastOneWorkingDay(
+            ProjectCalendarUpdateDto dto)
+        {
+            var hasWorkingDay =
+                dto.WorkMonday ||
+                dto.WorkTuesday ||
+                dto.WorkWednesday ||
+                dto.WorkThursday ||
+                dto.WorkFriday ||
+                dto.WorkSaturday ||
+                dto.WorkSunday;
+
+            if (!hasWorkingDay)
+            {
+                throw new InvalidOperationException(
+                    "Le calendrier doit contenir au moins un jour ouvré par semaine."
+                );
+            }
+        }
+
+        private static ProjectCalendarReadDto MapToReadDto(
+            ProjectCalendar calendar)
         {
             return new ProjectCalendarReadDto
             {

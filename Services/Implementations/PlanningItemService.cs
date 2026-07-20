@@ -27,12 +27,11 @@ namespace PlannerAPI.Services.Implementations
                 .AsNoTracking()
                 .Include(i => i.Task)
                 .Where(i => i.ProjectId == projectId)
-                .OrderBy(i => i.WbsCode)
-                .ThenBy(i => i.SortOrder)
-                .ThenBy(i => i.Id)
                 .ToListAsync();
 
-            return items.Select(item => MapToReadDto(item, items));
+            var orderedItems = OrderItemsByHierarchy(items);
+
+            return orderedItems.Select(item => MapToReadDto(item, items));
         }
 
         public async Task<PlanningItemReadDto?> GetByIdAsync(int id)
@@ -325,30 +324,68 @@ namespace PlannerAPI.Services.Implementations
             if (item == null)
                 return null;
 
-            if (item.Type != PlanningItemType.Task)
-                throw new InvalidOperationException("Seules les tâches peuvent être déplacées pour le moment.");
+            if (dto.NewParentId == id)
+            {
+                throw new InvalidOperationException(
+                    "Un élément de planning ne peut pas être son propre parent."
+                );
+            }
 
-            var newParent = await _context.PlanningItems
-                .FirstOrDefaultAsync(i => i.Id == dto.NewParentId);
+            if (!dto.NewParentId.HasValue)
+            {
+                if (item.Type == PlanningItemType.Task)
+                {
+                    throw new InvalidOperationException(
+                        "Une tâche doit rester rattachée à un élément structurel."
+                    );
+                }
+            }
+            else
+            {
+                var newParent = await _context.PlanningItems
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(i => i.Id == dto.NewParentId.Value);
 
-            if (newParent == null)
-                throw new InvalidOperationException($"Parent cible avec l'id {dto.NewParentId} introuvable.");
+                if (newParent == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Parent cible avec l'id {dto.NewParentId.Value} introuvable."
+                    );
+                }
 
-            if (newParent.ProjectId != item.ProjectId)
-                throw new InvalidOperationException("Impossible de déplacer un élément vers un autre projet.");
+                if (newParent.ProjectId != item.ProjectId)
+                {
+                    throw new InvalidOperationException(
+                        "Impossible de déplacer un élément vers un autre projet."
+                    );
+                }
 
-            if (newParent.Type != PlanningItemType.Section &&
-                newParent.Type != PlanningItemType.Zone)
-                throw new InvalidOperationException("Le parent cible doit être une Section ou une Zone.");
+                if (newParent.Type == PlanningItemType.Task)
+                {
+                    throw new InvalidOperationException(
+                        "Une tâche ne peut pas contenir de sous-éléments."
+                    );
+                }
 
-            var nextSortOrder = await _context.PlanningItems
-                .Where(i => i.ProjectId == item.ProjectId && i.ParentId == newParent.Id)
-                .Select(i => (int?)i.SortOrder)
-                .MaxAsync() ?? 0;
+                var createsCycle = await CreatesHierarchyCycleAsync(
+                    itemId: id,
+                    newParentId: newParent.Id
+                );
 
-            nextSortOrder++;
+                if (createsCycle)
+                {
+                    throw new InvalidOperationException(
+                        "Ce déplacement créerait un cycle dans la hiérarchie du planning."
+                    );
+                }
+            }
 
-            item.ParentId = newParent.Id;
+            var nextSortOrder = await GetNextSortOrderAsync(
+                item.ProjectId,
+                dto.NewParentId
+            );
+
+            item.ParentId = dto.NewParentId;
             item.SortOrder = nextSortOrder;
 
             await _context.SaveChangesAsync();
@@ -399,6 +436,33 @@ namespace PlannerAPI.Services.Implementations
                         "Le parent doit appartenir au même projet."
                     );
                 }
+
+                if (parent.Type == PlanningItemType.Task)
+                {
+                    throw new InvalidOperationException(
+                        "Une tâche ne peut pas contenir de sous-éléments."
+                    );
+                }
+            }
+
+            if (type == PlanningItemType.Task && !parentId.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "Une tâche doit être rattachée à un élément structurel."
+                );
+            }
+
+            if (type == PlanningItemType.Task && currentItemId.HasValue)
+            {
+                var hasChildren = await _context.PlanningItems
+                    .AnyAsync(i => i.ParentId == currentItemId.Value);
+
+                if (hasChildren)
+                {
+                    throw new InvalidOperationException(
+                        "Impossible de convertir cet élément en tâche car il contient des sous-éléments."
+                    );
+                }
             }
 
             if (type == PlanningItemType.Task && !taskId.HasValue)
@@ -443,6 +507,52 @@ namespace PlannerAPI.Services.Implementations
                     );
                 }
             }
+        }
+
+        private static List<PlanningItem> OrderItemsByHierarchy(
+            List<PlanningItem> items)
+        {
+            var orderedItems = new List<PlanningItem>();
+            var visited = new HashSet<int>();
+
+            void AddChildren(int? parentId)
+            {
+                var children = items
+                    .Where(i => i.ParentId == parentId)
+                    .OrderBy(i => i.SortOrder)
+                    .ThenBy(i => i.Id)
+                    .ToList();
+
+                foreach (var child in children)
+                {
+                    if (!visited.Add(child.Id))
+                        continue;
+
+                    orderedItems.Add(child);
+                    AddChildren(child.Id);
+                }
+            }
+
+            AddChildren(parentId: null);
+
+            // Sécurité pour ne pas masquer un ancien élément orphelin
+            // ou une donnée historique incohérente.
+            var remainingItems = items
+                .Where(i => !visited.Contains(i.Id))
+                .OrderBy(i => i.SortOrder)
+                .ThenBy(i => i.Id)
+                .ToList();
+
+            foreach (var remainingItem in remainingItems)
+            {
+                if (!visited.Add(remainingItem.Id))
+                    continue;
+
+                orderedItems.Add(remainingItem);
+                AddChildren(remainingItem.Id);
+            }
+
+            return orderedItems;
         }
 
         private async Task<int> GetNextSortOrderAsync(int projectId, int? parentId)

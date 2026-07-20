@@ -124,7 +124,7 @@ class _ResourceFormDialogState extends State<ResourceFormDialog> {
                 const SizedBox(height: 12),
 
                 DropdownButtonFormField<String>(
-                  value: _selectedType,
+                  initialValue: _selectedType,
                   decoration: const InputDecoration(
                     labelText: 'Type',
                     border: OutlineInputBorder(),

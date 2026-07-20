@@ -50,3 +50,36 @@ coluonne plus condensé
 
 7. Gantt / Summary / Warnings / ResourceAnalysis
    Endpoints lecture/calcul, à rendre propres mais pas forcément CRUD.
+
+
+   08/07/2026
+   Afficher les dates sur le coté redsuire hauteur
+
+FlutterError (Looking up a deactivated widget's ancestor is unsafe.
+At this point the state of the widget's element tree is no longer stable.
+To safely refer to a widget's ancestor in its dispose() method, save a reference to the ancestor by calling dependOnInheritedWidgetOfExactType() in the widget's didChangeDependencies() method.)
+
+ajouter niveau de hierarchie
+
+modification plus complete 
+
+calendrier ne change pas les dates lors de changement
+ajouter periode non ouvré pour congés
+
+comparaison baselines probleme d'affichage + ajouter graph + gantt  plus visuel
+
+travailler en jour ouvré pas en calendraire
+
+alertes = graphique
+
+analyses des ressoruces camembert par ressources et tooltip le but est de pouvoir les deplacer
+
+ajout de groupe indiquer le nombre de ressources (genre 30 ouvrier et les nommé automatiquement)
+
+onglets dashboard ressources baselines et gantt
+
+Avant test dashboard complet impression gantt avec colonne changer via colonne plus de soucis de memoire (voir crash test) + fonctionnalité indexation des planning voir ms project
+
+revoir UI onglets pour avoir des acces plus simples 
+
+++ graph pour rendre les differentes données visibles

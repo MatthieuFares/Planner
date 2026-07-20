@@ -5,13 +5,17 @@ import '../data/project_calendar_api.dart';
 import '../data/project_calendar_exception_api.dart';
 import '../data/project_calendar_exception_model.dart';
 import '../data/project_calendar_model.dart';
+import '../data/project_calendar_period_api.dart';
+import '../data/project_calendar_period_model.dart';
 
 class ProjectCalendarView extends StatefulWidget {
   final int projectId;
+  final VoidCallback? onCalendarChanged;
 
   const ProjectCalendarView({
     super.key,
     required this.projectId,
+    this.onCalendarChanged,
   });
 
   @override
@@ -22,19 +26,28 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   final ProjectCalendarApi _calendarApi = ProjectCalendarApi();
   final ProjectCalendarExceptionApi _exceptionApi =
       ProjectCalendarExceptionApi();
+  final ProjectCalendarPeriodApi _periodApi = ProjectCalendarPeriodApi();
 
   final TextEditingController _exceptionLabelController =
       TextEditingController();
+  final TextEditingController _periodLabelController =
+      TextEditingController();
 
   ProjectCalendarModel? _calendar;
+  List<ProjectCalendarPeriodModel> _periods = [];
   List<ProjectCalendarExceptionModel> _exceptions = [];
+
+  DateTime? _selectedPeriodStartDate;
+  DateTime? _selectedPeriodEndDate;
 
   DateTime? _selectedExceptionDate;
   bool _selectedExceptionIsWorkingDay = false;
 
   bool _isLoading = true;
   bool _isSavingCalendar = false;
+  bool _isSavingPeriod = false;
   bool _isSavingException = false;
+
   String? _error;
 
   @override
@@ -46,23 +59,28 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   @override
   void dispose() {
     _exceptionLabelController.dispose();
+    _periodLabelController.dispose();
     super.dispose();
   }
 
   Future<void> _loadAll() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
       final calendar = await _calendarApi.getByProjectId(widget.projectId);
+      final periods = await _periodApi.getByProjectId(widget.projectId);
       final exceptions = await _exceptionApi.getByProjectId(widget.projectId);
 
       if (!mounted) return;
 
       setState(() {
         _calendar = calendar;
+        _periods = periods;
         _exceptions = exceptions;
         _isLoading = false;
       });
@@ -99,9 +117,13 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
         _isSavingCalendar = false;
       });
 
+      widget.onCalendarChanged?.call();
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Calendrier projet enregistré.'),
+          content: Text(
+            'Calendrier enregistré et planning recalculé.',
+          ),
         ),
       );
     } catch (error) {
@@ -120,6 +142,190 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
     }
   }
 
+  Future<void> _pickPeriodStartDate() async {
+    final now = DateTime.now();
+
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedPeriodStartDate ?? now,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 10),
+    );
+
+    if (!mounted || pickedDate == null) return;
+
+    final normalizedDate = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+    );
+
+    setState(() {
+      _selectedPeriodStartDate = normalizedDate;
+
+      if (_selectedPeriodEndDate == null ||
+          _selectedPeriodEndDate!.isBefore(normalizedDate)) {
+        _selectedPeriodEndDate = normalizedDate;
+      }
+    });
+  }
+
+  Future<void> _pickPeriodEndDate() async {
+    final startDate = _selectedPeriodStartDate;
+
+    if (startDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Choisis d’abord la date de début de la période.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedPeriodEndDate ?? startDate,
+      firstDate: startDate,
+      lastDate: DateTime(startDate.year + 10),
+    );
+
+    if (!mounted || pickedDate == null) return;
+
+    setState(() {
+      _selectedPeriodEndDate = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+      );
+    });
+  }
+
+  Future<void> _addPeriod() async {
+    final startDate = _selectedPeriodStartDate;
+    final endDate = _selectedPeriodEndDate;
+
+    if (startDate == null || endDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Choisis une date de début et une date de fin.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (endDate.isBefore(startDate)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'La date de fin doit être postérieure ou égale au début.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final label = _periodLabelController.text.trim();
+
+    setState(() {
+      _isSavingPeriod = true;
+      _error = null;
+    });
+
+    try {
+      await _periodApi.create(
+        projectId: widget.projectId,
+        period: ProjectCalendarPeriodModel(
+          id: 0,
+          projectCalendarId: 0,
+          startDate: startDate,
+          endDate: endDate,
+          label: label.isEmpty ? 'Période non ouvrée' : label,
+        ),
+      );
+
+      final periods = await _periodApi.getByProjectId(widget.projectId);
+
+      if (!mounted) return;
+
+      setState(() {
+        _periods = periods;
+        _selectedPeriodStartDate = null;
+        _selectedPeriodEndDate = null;
+        _periodLabelController.clear();
+        _isSavingPeriod = false;
+      });
+
+      widget.onCalendarChanged?.call();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Période ajoutée et planning recalculé.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = error.toString();
+        _isSavingPeriod = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur ajout période : $error'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deletePeriod(
+    ProjectCalendarPeriodModel period,
+  ) async {
+    setState(() {
+      _error = null;
+    });
+
+    try {
+      await _periodApi.delete(period.id);
+
+      final periods = await _periodApi.getByProjectId(widget.projectId);
+
+      if (!mounted) return;
+
+      setState(() {
+        _periods = periods;
+      });
+
+      widget.onCalendarChanged?.call();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Période supprimée et planning recalculé.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = error.toString();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur suppression période : $error'),
+        ),
+      );
+    }
+  }
+
   Future<void> _pickExceptionDate() async {
     final now = DateTime.now();
 
@@ -130,7 +336,7 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
       lastDate: DateTime(now.year + 10),
     );
 
-    if (pickedDate == null) return;
+    if (!mounted || pickedDate == null) return;
 
     setState(() {
       _selectedExceptionDate = DateTime(
@@ -184,9 +390,13 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
         _isSavingException = false;
       });
 
+      widget.onCalendarChanged?.call();
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Exception calendrier ajoutée.'),
+          content: Text(
+            'Exception ajoutée et planning recalculé.',
+          ),
         ),
       );
     } catch (error) {
@@ -205,7 +415,9 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
     }
   }
 
-  Future<void> _deleteException(ProjectCalendarExceptionModel exception) async {
+  Future<void> _deleteException(
+    ProjectCalendarExceptionModel exception,
+  ) async {
     setState(() {
       _error = null;
     });
@@ -221,9 +433,13 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
         _exceptions = exceptions;
       });
 
+      widget.onCalendarChanged?.call();
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Exception supprimée.'),
+          content: Text(
+            'Exception supprimée et planning recalculé.',
+          ),
         ),
       );
     } catch (error) {
@@ -275,11 +491,13 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
       padding: const EdgeInsets.all(16),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
+          constraints: const BoxConstraints(maxWidth: 820),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildCalendarCard(context, calendar),
+              const SizedBox(height: 16),
+              _buildPeriodsCard(context),
               const SizedBox(height: 16),
               _buildExceptionsCard(context),
             ],
@@ -394,7 +612,7 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
                   label: Text(
                     _isSavingCalendar
                         ? 'Enregistrement...'
-                        : 'Enregistrer',
+                        : 'Enregistrer et recalculer',
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -405,6 +623,129 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPeriodsCard(BuildContext context) {
+    final dateFormatter = DateFormat('dd/MM/yyyy');
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.date_range),
+                const SizedBox(width: 8),
+                Text(
+                  'Périodes non ouvrées',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ajoute une plage complète de congés, fermeture chantier '
+              'ou indisponibilité collective.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed:
+                      _isSavingPeriod ? null : _pickPeriodStartDate,
+                  icon: const Icon(Icons.first_page),
+                  label: Text(
+                    _selectedPeriodStartDate == null
+                        ? 'Date de début'
+                        : dateFormatter.format(
+                            _selectedPeriodStartDate!,
+                          ),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed:
+                      _isSavingPeriod ? null : _pickPeriodEndDate,
+                  icon: const Icon(Icons.last_page),
+                  label: Text(
+                    _selectedPeriodEndDate == null
+                        ? 'Date de fin'
+                        : dateFormatter.format(
+                            _selectedPeriodEndDate!,
+                          ),
+                  ),
+                ),
+                SizedBox(
+                  width: 260,
+                  child: TextField(
+                    controller: _periodLabelController,
+                    enabled: !_isSavingPeriod,
+                    decoration: const InputDecoration(
+                      labelText: 'Libellé',
+                      hintText: 'Ex : Congés d’été...',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: _isSavingPeriod ? null : _addPeriod,
+                  icon: _isSavingPeriod
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.add),
+                  label: Text(
+                    _isSavingPeriod ? 'Ajout...' : 'Ajouter',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (_periods.isEmpty)
+              Text(
+                'Aucune période non ouvrée pour ce projet.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              )
+            else
+              Column(
+                children: _periods.map((period) {
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(
+                      Icons.block,
+                      color: Colors.red,
+                    ),
+                    title: Text(
+                      period.label.isEmpty
+                          ? 'Période non ouvrée'
+                          : period.label,
+                    ),
+                    subtitle: Text(
+                      '${dateFormatter.format(period.startDate)} → '
+                      '${dateFormatter.format(period.endDate)}',
+                    ),
+                    trailing: IconButton(
+                      tooltip: 'Supprimer',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => _deletePeriod(period),
+                    ),
+                  );
+                }).toList(),
+              ),
           ],
         ),
       ),
@@ -432,7 +773,9 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Ajoute ici les jours fériés, fermetures chantier, ponts, ou jours travaillés exceptionnellement.',
+              'Ajoute un jour férié, un pont ou un jour travaillé '
+              'exceptionnellement. Une exception précise est prioritaire '
+              'sur une période non ouvrée.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -442,18 +785,22 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 OutlinedButton.icon(
-                  onPressed: _isSavingException ? null : _pickExceptionDate,
+                  onPressed:
+                      _isSavingException ? null : _pickExceptionDate,
                   icon: const Icon(Icons.calendar_today),
                   label: Text(
                     _selectedExceptionDate == null
                         ? 'Choisir une date'
-                        : dateFormatter.format(_selectedExceptionDate!),
+                        : dateFormatter.format(
+                            _selectedExceptionDate!,
+                          ),
                   ),
                 ),
                 SizedBox(
                   width: 260,
                   child: TextField(
                     controller: _exceptionLabelController,
+                    enabled: !_isSavingException,
                     decoration: const InputDecoration(
                       labelText: 'Libellé',
                       hintText: 'Ex : Noël, fermeture chantier...',
@@ -478,7 +825,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
                         },
                 ),
                 FilledButton.icon(
-                  onPressed: _isSavingException ? null : _addException,
+                  onPressed:
+                      _isSavingException ? null : _addException,
                   icon: _isSavingException
                       ? const SizedBox(
                           width: 16,

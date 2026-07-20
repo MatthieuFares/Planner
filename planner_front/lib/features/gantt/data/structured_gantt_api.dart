@@ -18,7 +18,7 @@ class StructuredGanttApi {
 
   Future<void> movePlanningItem({
     required int itemId,
-    required int newParentId,
+    required int? newParentId,
   }) async {
     await ApiClient.dio.post(
       '/PlanningItems/$itemId/move',

@@ -50,7 +50,7 @@ class _ResourceGroupMemberDialogState extends State<ResourceGroupMemberDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<int>(
-              value: _groupId,
+              initialValue: _groupId,
               decoration: const InputDecoration(
                 labelText: 'Groupe',
                 border: OutlineInputBorder(),
@@ -69,7 +69,7 @@ class _ResourceGroupMemberDialogState extends State<ResourceGroupMemberDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              value: _resourceId,
+              initialValue: _resourceId,
               decoration: const InputDecoration(
                 labelText: 'Ressource',
                 border: OutlineInputBorder(),

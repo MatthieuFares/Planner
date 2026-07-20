@@ -535,8 +535,8 @@ class _ResourceMetricTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isWarning
-              ? Colors.red.withOpacity(0.35)
-              : Theme.of(context).dividerColor.withOpacity(0.25),
+              ? Colors.red.withValues(alpha: 0.35)
+              : Theme.of(context).dividerColor.withValues(alpha: 0.25),
         ),
       ),
       child: Row(

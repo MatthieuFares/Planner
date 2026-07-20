@@ -9,13 +9,18 @@ namespace PlannerAPI.Services.Implementations
     public class ProjectCalendarExceptionService : IProjectCalendarExceptionService
     {
         private readonly AppDbContext _context;
+        private readonly ITaskSchedulingService _taskSchedulingService;
 
-        public ProjectCalendarExceptionService(AppDbContext context)
+        public ProjectCalendarExceptionService(
+            AppDbContext context,
+            ITaskSchedulingService taskSchedulingService)
         {
             _context = context;
+            _taskSchedulingService = taskSchedulingService;
         }
 
-        public async Task<IEnumerable<ProjectCalendarExceptionReadDto>?> GetByProjectIdAsync(int projectId)
+        public async Task<IEnumerable<ProjectCalendarExceptionReadDto>?> GetByProjectIdAsync(
+            int projectId)
         {
             var calendar = await GetOrCreateCalendarAsync(projectId);
 
@@ -52,6 +57,7 @@ namespace PlannerAPI.Services.Implementations
                 existingException.IsWorkingDay = dto.IsWorkingDay;
 
                 await _context.SaveChangesAsync();
+                await _taskSchedulingService.RecalculateProjectAsync(projectId);
 
                 return MapToReadDto(existingException);
             }
@@ -65,7 +71,9 @@ namespace PlannerAPI.Services.Implementations
             };
 
             _context.ProjectCalendarExceptions.Add(exception);
+
             await _context.SaveChangesAsync();
+            await _taskSchedulingService.RecalculateProjectAsync(projectId);
 
             return MapToReadDto(exception);
         }
@@ -80,6 +88,10 @@ namespace PlannerAPI.Services.Implementations
             if (exception == null)
                 return null;
 
+            var projectId = await GetProjectIdByCalendarIdAsync(
+                exception.ProjectCalendarId
+            );
+
             var normalizedDate = dto.Date.Date;
 
             var duplicateDate = await _context.ProjectCalendarExceptions
@@ -91,7 +103,8 @@ namespace PlannerAPI.Services.Implementations
             if (duplicateDate)
             {
                 throw new InvalidOperationException(
-                    "Une exception existe déjà pour cette date sur ce calendrier.");
+                    "Une exception existe déjà pour cette date sur ce calendrier."
+                );
             }
 
             exception.Date = normalizedDate;
@@ -99,6 +112,7 @@ namespace PlannerAPI.Services.Implementations
             exception.IsWorkingDay = dto.IsWorkingDay;
 
             await _context.SaveChangesAsync();
+            await _taskSchedulingService.RecalculateProjectAsync(projectId);
 
             return MapToReadDto(exception);
         }
@@ -111,10 +125,25 @@ namespace PlannerAPI.Services.Implementations
             if (exception == null)
                 return false;
 
+            var projectId = await GetProjectIdByCalendarIdAsync(
+                exception.ProjectCalendarId
+            );
+
             _context.ProjectCalendarExceptions.Remove(exception);
+
             await _context.SaveChangesAsync();
+            await _taskSchedulingService.RecalculateProjectAsync(projectId);
 
             return true;
+        }
+
+        private async Task<int> GetProjectIdByCalendarIdAsync(
+            int projectCalendarId)
+        {
+            return await _context.ProjectCalendars
+                .Where(c => c.Id == projectCalendarId)
+                .Select(c => c.ProjectId)
+                .FirstAsync();
         }
 
         private async Task<ProjectCalendar?> GetOrCreateCalendarAsync(int projectId)

@@ -5,28 +5,47 @@ namespace PlannerAPI.Data
 {
     public class AppDbContext : DbContext
     {
-        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+        public AppDbContext(
+            DbContextOptions<AppDbContext> options)
+            : base(options)
         {
         }
 
         public DbSet<Project> Projects => Set<Project>();
         public DbSet<PlannerTask> Tasks => Set<PlannerTask>();
-        public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
-        public DbSet<Resource> Resources { get; set; }
-        public DbSet<ResourceAssignment> ResourceAssignments { get; set; }
-        public DbSet<ResourceGroup> ResourceGroups { get; set; }
-        public DbSet<ResourceGroupMember> ResourceGroupMembers { get; set; }
-        public DbSet<PlanningItem> PlanningItems { get; set; }
-        public DbSet<ProjectCalendar> ProjectCalendars { get; set; }
-        public DbSet<ProjectCalendarException> ProjectCalendarExceptions { get; set; }
-        public DbSet<ProjectBaseline> ProjectBaselines { get; set; }
-        public DbSet<ProjectBaselineTask> ProjectBaselineTasks { get; set; }        
+        public DbSet<TaskDependency> TaskDependencies =>
+            Set<TaskDependency>();
 
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        public DbSet<Resource> Resources => Set<Resource>();
+        public DbSet<ResourceAssignment> ResourceAssignments =>
+            Set<ResourceAssignment>();
+        public DbSet<ResourceGroup> ResourceGroups =>
+            Set<ResourceGroup>();
+        public DbSet<ResourceGroupMember> ResourceGroupMembers =>
+            Set<ResourceGroupMember>();
+
+        public DbSet<PlanningItem> PlanningItems =>
+            Set<PlanningItem>();
+
+        public DbSet<ProjectCalendar> ProjectCalendars =>
+            Set<ProjectCalendar>();
+        public DbSet<ProjectCalendarException> ProjectCalendarExceptions =>
+            Set<ProjectCalendarException>();
+        public DbSet<ProjectCalendarPeriod> ProjectCalendarPeriods =>
+            Set<ProjectCalendarPeriod>();
+
+        public DbSet<ProjectBaseline> ProjectBaselines =>
+            Set<ProjectBaseline>();
+        public DbSet<ProjectBaselineTask> ProjectBaselineTasks =>
+            Set<ProjectBaselineTask>();
+
+        protected override void OnModelCreating(
+            ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<PlannerTask>().ToTable("PlannerTasks");
+            modelBuilder.Entity<PlannerTask>()
+                .ToTable("PlannerTasks");
 
             // Project -> PlannerTasks
             modelBuilder.Entity<PlannerTask>()
@@ -49,35 +68,44 @@ namespace PlannerAPI.Data
                 .HasForeignKey(td => td.PredecessorId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // Éviter les doublons DB
             modelBuilder.Entity<TaskDependency>()
-                .HasIndex(td => new { td.PredecessorId, td.SuccessorId, td.Type })
+                .HasIndex(td => new
+                {
+                    td.PredecessorId,
+                    td.SuccessorId,
+                    td.Type
+                })
                 .IsUnique();
 
+            // ResourceAssignment -> PlannerTask
             modelBuilder.Entity<ResourceAssignment>()
                 .HasOne(ra => ra.Task)
                 .WithMany(t => t.ResourceAssignments)
                 .HasForeignKey(ra => ra.TaskId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            // ResourceAssignment -> Resource
             modelBuilder.Entity<ResourceAssignment>()
                 .HasOne(ra => ra.Resource)
                 .WithMany(r => r.Assignments)
                 .HasForeignKey(ra => ra.ResourceId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // ResourceAssignment -> ResourceGroup
             modelBuilder.Entity<ResourceAssignment>()
                 .HasOne(ra => ra.ResourceGroup)
                 .WithMany()
                 .HasForeignKey(ra => ra.ResourceGroupId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // ResourceGroupMember -> ResourceGroup
             modelBuilder.Entity<ResourceGroupMember>()
                 .HasOne(rgm => rgm.ResourceGroup)
                 .WithMany(rg => rg.Members)
                 .HasForeignKey(rgm => rgm.ResourceGroupId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            // ResourceGroupMember -> Resource
             modelBuilder.Entity<ResourceGroupMember>()
                 .HasOne(rgm => rgm.Resource)
                 .WithMany()
@@ -85,7 +113,11 @@ namespace PlannerAPI.Data
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<ResourceGroupMember>()
-                .HasIndex(rgm => new { rgm.ResourceGroupId, rgm.ResourceId })
+                .HasIndex(rgm => new
+                {
+                    rgm.ResourceGroupId,
+                    rgm.ResourceId
+                })
                 .IsUnique();
 
             // Project -> PlanningItems
@@ -95,7 +127,7 @@ namespace PlannerAPI.Data
                 .HasForeignKey(pi => pi.ProjectId)
                 .OnDelete(DeleteBehavior.NoAction);
 
-            // PlanningItem -> Children
+            // PlanningItem -> Parent / Children
             modelBuilder.Entity<PlanningItem>()
                 .HasOne(pi => pi.Parent)
                 .WithMany(pi => pi.Children)
@@ -109,36 +141,32 @@ namespace PlannerAPI.Data
                 .HasForeignKey(pi => pi.TaskId)
                 .OnDelete(DeleteBehavior.SetNull);
 
-            // Ordre stable dans la structure du projet
             modelBuilder.Entity<PlanningItem>()
-                .HasIndex(pi => new { pi.ProjectId, pi.ParentId, pi.SortOrder });
+                .HasIndex(pi => new
+                {
+                    pi.ProjectId,
+                    pi.ParentId,
+                    pi.SortOrder
+                });
 
-            // Une tâche ne peut être liée qu'à une seule ligne de planning
             modelBuilder.Entity<PlanningItem>()
                 .HasIndex(pi => pi.TaskId)
                 .IsUnique()
                 .HasFilter("[TaskId] IS NOT NULL");
 
+            // Project -> ProjectCalendar
             modelBuilder.Entity<ProjectCalendar>()
                 .HasOne(c => c.Project)
                 .WithOne(p => p.Calendar)
-                .HasForeignKey<ProjectCalendar>(c => c.ProjectId)
+                .HasForeignKey<ProjectCalendar>(
+                    c => c.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<ProjectCalendar>()
                 .HasIndex(c => c.ProjectId)
                 .IsUnique();
 
-            modelBuilder.Entity<ProjectCalendar>()
-                .HasOne(c => c.Project)
-                .WithOne(p => p.Calendar)
-                .HasForeignKey<ProjectCalendar>(c => c.ProjectId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            modelBuilder.Entity<ProjectCalendar>()
-                .HasIndex(c => c.ProjectId)
-                .IsUnique();
-
+            // ProjectCalendar -> Exceptions
             modelBuilder.Entity<ProjectCalendarException>()
                 .HasOne(e => e.ProjectCalendar)
                 .WithMany(c => c.Exceptions)
@@ -146,9 +174,33 @@ namespace PlannerAPI.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<ProjectCalendarException>()
-                .HasIndex(e => new { e.ProjectCalendarId, e.Date })
+                .HasIndex(e => new
+                {
+                    e.ProjectCalendarId,
+                    e.Date
+                })
                 .IsUnique();
 
+            // ProjectCalendar -> Periods
+            modelBuilder.Entity<ProjectCalendarPeriod>()
+                .HasOne(p => p.ProjectCalendar)
+                .WithMany(c => c.Periods)
+                .HasForeignKey(p => p.ProjectCalendarId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ProjectCalendarPeriod>()
+                .HasIndex(p => new
+                {
+                    p.ProjectCalendarId,
+                    p.StartDate,
+                    p.EndDate
+                });
+
+            modelBuilder.Entity<ProjectCalendarPeriod>()
+                .Property(p => p.Label)
+                .HasMaxLength(150);
+
+            // Project -> Baselines
             modelBuilder.Entity<ProjectBaseline>()
                 .HasOne(b => b.Project)
                 .WithMany(p => p.Baselines)
@@ -156,8 +208,13 @@ namespace PlannerAPI.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<ProjectBaseline>()
-                .HasIndex(b => new { b.ProjectId, b.Name });
+                .HasIndex(b => new
+                {
+                    b.ProjectId,
+                    b.Name
+                });
 
+            // ProjectBaseline -> Tasks
             modelBuilder.Entity<ProjectBaselineTask>()
                 .HasOne(t => t.ProjectBaseline)
                 .WithMany(b => b.Tasks)
@@ -165,9 +222,11 @@ namespace PlannerAPI.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<ProjectBaselineTask>()
-                .HasIndex(t => new { t.ProjectBaselineId, t.TaskId });
-
-                
+                .HasIndex(t => new
+                {
+                    t.ProjectBaselineId,
+                    t.TaskId
+                });
         }
     }
 }

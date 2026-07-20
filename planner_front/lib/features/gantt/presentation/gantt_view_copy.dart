@@ -252,7 +252,7 @@ class _SimpleGanttState extends State<_SimpleGantt> {
               SizedBox(
                 width: 150,
                 child: DropdownButtonFormField<GanttDisplayMode>(
-                  value: widget.displayMode,
+                  initialValue: widget.displayMode,
                   decoration: const InputDecoration(
                     labelText: 'Affichage',
                     border: OutlineInputBorder(),
@@ -321,7 +321,7 @@ class _SimpleGanttState extends State<_SimpleGantt> {
                                 bottom: BorderSide(
                                   color: Theme.of(context)
                                       .dividerColor
-                                      .withOpacity(0.4),
+                                      .withValues(alpha: 0.4),
                                 ),
                               ),
                             ),
@@ -458,7 +458,7 @@ class _GanttDateHeader extends StatelessWidget {
             decoration: BoxDecoration(
               border: Border(
                 left: BorderSide(
-                  color: Theme.of(context).dividerColor.withOpacity(0.35),
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
                 ),
               ),
             ),
@@ -505,7 +505,7 @@ class _GanttBarRow extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withOpacity(0.4),
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
           ),
         ),
       ),
@@ -521,8 +521,8 @@ class _GanttBarRow extends StatelessWidget {
                   border: Border(
                     left: BorderSide(
                       color: isMajor
-                          ? Theme.of(context).dividerColor.withOpacity(0.7)
-                          : Theme.of(context).dividerColor.withOpacity(0.25),
+                          ? Theme.of(context).dividerColor.withValues(alpha: 0.7)
+                          : Theme.of(context).dividerColor.withValues(alpha: 0.25),
                     ),
                   ),
                 ),

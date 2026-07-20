@@ -21,6 +21,7 @@ builder.Services.AddScoped<IPlanningItemService, PlanningItemService>();
 builder.Services.AddScoped<IProjectCalendarService, ProjectCalendarService>();
 builder.Services.AddScoped<IProjectCalendarExceptionService, ProjectCalendarExceptionService>();
 builder.Services.AddScoped<IProjectBaselineService, ProjectBaselineService>();
+builder.Services.AddScoped<IProjectCalendarPeriodService,ProjectCalendarPeriodService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 

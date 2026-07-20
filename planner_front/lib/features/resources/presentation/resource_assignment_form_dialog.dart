@@ -160,7 +160,7 @@ class _ResourceAssignmentFormDialogState
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<int>(
-                  value: _taskId,
+                  initialValue: _taskId,
                   decoration: const InputDecoration(
                     labelText: 'Tâche',
                     border: OutlineInputBorder(),
@@ -225,7 +225,7 @@ class _ResourceAssignmentFormDialogState
 
                 if (_targetType == AssignmentTargetType.resource)
                   DropdownButtonFormField<int>(
-                    value: _resourceId,
+                    initialValue: _resourceId,
                     decoration: const InputDecoration(
                       labelText: 'Ressource',
                       border: OutlineInputBorder(),
@@ -253,7 +253,7 @@ class _ResourceAssignmentFormDialogState
 
                 if (_targetType == AssignmentTargetType.group)
                   DropdownButtonFormField<int>(
-                    value: _resourceGroupId,
+                    initialValue: _resourceGroupId,
                     decoration: const InputDecoration(
                       labelText: 'Groupe de ressources',
                       border: OutlineInputBorder(),

@@ -109,7 +109,7 @@ class _DependencyFormDialogState extends State<DependencyFormDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<int>(
-                value: _predecessorId,
+                initialValue: _predecessorId,
                 decoration: const InputDecoration(
                   labelText: 'Tâche prédécesseur',
                   border: OutlineInputBorder(),
@@ -136,7 +136,7 @@ class _DependencyFormDialogState extends State<DependencyFormDialog> {
               const SizedBox(height: 12),
 
               DropdownButtonFormField<int>(
-                value: _successorId,
+                initialValue: _successorId,
                 decoration: const InputDecoration(
                   labelText: 'Tâche successeur',
                   border: OutlineInputBorder(),
@@ -163,7 +163,7 @@ class _DependencyFormDialogState extends State<DependencyFormDialog> {
               const SizedBox(height: 12),
 
               DropdownButtonFormField<String>(
-                value: _type,
+                initialValue: _type,
                 decoration: const InputDecoration(
                   labelText: 'Type de dépendance',
                   border: OutlineInputBorder(),

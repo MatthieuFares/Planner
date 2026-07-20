@@ -92,23 +92,152 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task<bool> DeleteAsync(int id)
         {
-            var project = await _context.Projects.FindAsync(id);
+            var project = await _context.Projects
+                .FirstOrDefaultAsync(p => p.Id == id);
 
             if (project == null)
                 return false;
 
-            var hasTasks = await _context.Tasks
-                .AnyAsync(t => t.ProjectId == id);
+            await using var transaction = await _context.Database.BeginTransactionAsync();
 
-            if (hasTasks)
-                throw new InvalidOperationException(
-                    "Impossible de supprimer ce projet car il contient une ou plusieurs tâches.");
+            var taskIds = await _context.Tasks
+                .Where(t => t.ProjectId == id)
+                .Select(t => t.Id)
+                .ToListAsync();
+
+            if (taskIds.Any())
+            {
+                var resourceAssignments = await _context.ResourceAssignments
+                    .Where(a => taskIds.Contains(a.TaskId))
+                    .ToListAsync();
+
+                if (resourceAssignments.Any())
+                {
+                    _context.ResourceAssignments.RemoveRange(resourceAssignments);
+                }
+
+                var taskDependencies = await _context.TaskDependencies
+                    .Where(d =>
+                        taskIds.Contains(d.PredecessorId) ||
+                        taskIds.Contains(d.SuccessorId))
+                    .ToListAsync();
+
+                if (taskDependencies.Any())
+                {
+                    _context.TaskDependencies.RemoveRange(taskDependencies);
+                }
+            }
+
+            await DeletePlanningItemsAsync(id);
+            await DeleteBaselinesAsync(id);
+            await DeleteCalendarAsync(id);
+
+            if (taskIds.Any())
+            {
+                var tasks = await _context.Tasks
+                    .Where(t => t.ProjectId == id)
+                    .ToListAsync();
+
+                if (tasks.Any())
+                {
+                    _context.Tasks.RemoveRange(tasks);
+                }
+            }
 
             _context.Projects.Remove(project);
 
             await _context.SaveChangesAsync();
 
+            await transaction.CommitAsync();
+
             return true;
+        }
+
+        private async Task DeletePlanningItemsAsync(int projectId)
+        {
+            var planningItems = await _context.PlanningItems
+                .Where(pi => pi.ProjectId == projectId)
+                .ToListAsync();
+
+            if (!planningItems.Any())
+                return;
+
+            while (planningItems.Any())
+            {
+                var leafItems = planningItems
+                    .Where(item => !planningItems.Any(other => other.ParentId == item.Id))
+                    .ToList();
+
+                if (!leafItems.Any())
+                {
+                    _context.PlanningItems.RemoveRange(planningItems);
+                    planningItems.Clear();
+                    break;
+                }
+
+                _context.PlanningItems.RemoveRange(leafItems);
+
+                foreach (var leafItem in leafItems)
+                {
+                    planningItems.Remove(leafItem);
+                }
+
+                await _context.SaveChangesAsync();
+            }
+        }
+
+        private async Task DeleteBaselinesAsync(int projectId)
+        {
+            var baselineIds = await _context.ProjectBaselines
+                .Where(b => b.ProjectId == projectId)
+                .Select(b => b.Id)
+                .ToListAsync();
+
+            if (!baselineIds.Any())
+                return;
+
+            var baselineTasks = await _context.ProjectBaselineTasks
+                .Where(t => baselineIds.Contains(t.ProjectBaselineId))
+                .ToListAsync();
+
+            if (baselineTasks.Any())
+            {
+                _context.ProjectBaselineTasks.RemoveRange(baselineTasks);
+            }
+
+            var baselines = await _context.ProjectBaselines
+                .Where(b => b.ProjectId == projectId)
+                .ToListAsync();
+
+            if (baselines.Any())
+            {
+                _context.ProjectBaselines.RemoveRange(baselines);
+            }
+        }
+
+        private async Task DeleteCalendarAsync(int projectId)
+        {
+            var calendars = await _context.ProjectCalendars
+                .Where(c => c.ProjectId == projectId)
+                .ToListAsync();
+
+            if (!calendars.Any())
+                return;
+
+            var calendarIds = calendars
+                .Select(c => c.Id)
+                .ToList();
+
+            var exceptions = await _context.ProjectCalendarExceptions
+                .Where(e => calendarIds.Contains(e.ProjectCalendarId))
+                .ToListAsync();
+
+            if (exceptions.Any())
+            {
+                _context.ProjectCalendarExceptions.RemoveRange(exceptions);
+            }
+
+            _context.ProjectCalendars.RemoveRange(calendars);
         }
 
         private static ProjectReadDto MapToReadDto(Project project)
@@ -124,6 +253,7 @@ namespace PlannerAPI.Services.Implementations
                 EndDate = project.EndDate
             };
         }
+
         private static void ValidateProjectDates(DateTime? startDate, DateTime? endDate)
         {
             if (startDate.HasValue &&

@@ -187,7 +187,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 icon: Icon(Icons.groups_outlined),
                 label: 'Ressources',
               ),
-              const NavigationDestination(
+              NavigationDestination(
                 icon: Icon(Icons.calendar_month_outlined),
                 selectedIcon: Icon(Icons.calendar_month),
                 label: 'Calendrier',
