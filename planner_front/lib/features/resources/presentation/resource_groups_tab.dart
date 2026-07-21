@@ -34,8 +34,28 @@ class _ResourceGroupsTabState extends State<ResourceGroupsTab> {
     final groups = await _groupApi.getGroups();
     final resources = await _resourceApi.getResources();
 
+    final hydratedGroups = await Future.wait(
+      groups.map((group) async {
+        final members = await _groupApi.getMembers(group.id);
+
+        return ResourceGroup(
+          id: group.id,
+          name: group.name,
+          description: group.description,
+          members: members,
+        );
+      }),
+    );
+
+    hydratedGroups.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    resources.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+
     return _ResourceGroupsData(
-      groups: groups,
+      groups: hydratedGroups,
       resources: resources,
     );
   }
@@ -137,15 +157,37 @@ class _ResourceGroupsTabState extends State<ResourceGroupsTab> {
     ResourceGroup group,
     List<Resource> resources,
   ) async {
+    final existingResourceIds = group.members
+        .map((member) => member.resourceId)
+        .toSet();
+
+    final availableResources = resources
+        .where(
+          (resource) => !existingResourceIds.contains(resource.id),
+        )
+        .toList();
+
+    if (availableResources.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Toutes les ressources disponibles sont déjà membres '
+            'de ce groupe.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final request = await showDialog<ResourceGroupMemberRequest>(
       context: context,
       builder: (_) => ResourceGroupMemberDialog(
         groups: [group],
-        resources: resources,
+        resources: availableResources,
       ),
     );
 
-    if (request == null) return;
+    if (!mounted || request == null) return;
 
     try {
       await _groupApi.addMember(request);
@@ -307,16 +349,27 @@ class _ResourceGroupsTabState extends State<ResourceGroupsTab> {
               ),
             ),
             Expanded(
-              child: data.groups.isEmpty
-                  ? const Center(child: Text('Aucun groupe de ressources.'))
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: data.groups.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final group = data.groups[index];
-
-                        return _ResourceGroupCard(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                children: [
+                  _ResourceGroupsSummary(
+                    groups: data.groups,
+                  ),
+                  const SizedBox(height: 14),
+                  if (data.groups.isEmpty)
+                    const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(28),
+                        child: Center(
+                          child: Text('Aucun groupe de ressources.'),
+                        ),
+                      ),
+                    )
+                  else
+                    ...data.groups.map((group) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _ResourceGroupCard(
                           group: group,
                           resources: data.resources,
                           onEdit: () => _editGroup(group),
@@ -325,9 +378,11 @@ class _ResourceGroupsTabState extends State<ResourceGroupsTab> {
                               _addMemberToGroup(group, data.resources),
                           onRemoveMember: (member) =>
                               _removeMember(group, member),
-                        );
-                      },
-                    ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
             ),
           ],
         );
@@ -355,14 +410,54 @@ class _ResourceGroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = _ResourceGroupStats.fromGroup(group);
+    final memberIds = group.members
+        .map((member) => member.resourceId)
+        .toSet();
+    final availableResourceCount = resources
+        .where((resource) => !memberIds.contains(resource.id))
+        .length;
+
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
-        leading: const Icon(Icons.group_work_outlined),
-        title: Text(group.name),
-        subtitle: Text(
-          group.description?.isNotEmpty == true
-              ? '${group.description} · ${group.members.length} membre(s)'
-              : '${group.members.length} membre(s)',
+        tilePadding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        leading: CircleAvatar(
+          child: Text(
+            '${group.members.length}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        title: Text(
+          group.name,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              _GroupCompactChip(
+                icon: Icons.people_outline,
+                text: '${group.members.length} membre(s)',
+              ),
+              _GroupCompactChip(
+                icon: Icons.access_time_outlined,
+                text: '${_formatNumber(stats.totalCapacity)} h/sem.',
+              ),
+              _GroupCompactChip(
+                icon: Icons.euro_outlined,
+                text: '${_formatNumber(stats.totalHourlyCost)} €/h',
+              ),
+              if (group.description?.isNotEmpty == true)
+                _GroupCompactChip(
+                  icon: Icons.notes_outlined,
+                  text: group.description!,
+                ),
+            ],
+          ),
         ),
         trailing: SizedBox(
           width: 146,
@@ -370,8 +465,11 @@ class _ResourceGroupCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               IconButton(
-                tooltip: 'Ajouter membre',
-                onPressed: onAddMember,
+                tooltip: availableResourceCount == 0
+                    ? 'Aucune ressource disponible à ajouter'
+                    : 'Ajouter un membre',
+                onPressed:
+                    availableResourceCount == 0 ? null : onAddMember,
                 icon: const Icon(Icons.person_add_alt),
               ),
               IconButton(
@@ -380,45 +478,396 @@ class _ResourceGroupCard extends StatelessWidget {
                 icon: const Icon(Icons.edit_outlined),
               ),
               IconButton(
-                tooltip: 'Supprimer',
-                onPressed: onDelete,
+                tooltip: group.members.isNotEmpty
+                    ? 'Retire les membres avant de supprimer le groupe'
+                    : 'Supprimer',
+                onPressed: group.members.isNotEmpty ? null : onDelete,
                 icon: const Icon(Icons.delete_outline),
               ),
             ],
           ),
         ),
         children: [
+          const Divider(),
+          _ResourceGroupStatsPanel(stats: stats),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Membres du groupe',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ),
+          const SizedBox(height: 8),
           if (group.members.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Aucun membre dans ce groupe.'),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(context)
+                      .dividerColor
+                      .withValues(alpha: 0.45),
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  const Text('Aucun membre dans ce groupe.'),
+                  if (availableResourceCount > 0) ...[
+                    const SizedBox(height: 10),
+                    FilledButton.tonalIcon(
+                      onPressed: onAddMember,
+                      icon: const Icon(Icons.person_add_alt),
+                      label: Text(
+                        'Ajouter une ressource '
+                        '($availableResourceCount disponible(s))',
+                      ),
+                    ),
+                  ],
+                ],
               ),
             )
           else
             ...group.members.map((member) {
-              return ListTile(
-                dense: true,
-                leading: const Icon(Icons.person_outline),
-                title: Text(member.resourceName),
-                subtitle: Text(
-                  'Type : ${member.resourceType} | '
-                  'Capacité : ${member.capacityHoursPerWeek}h/semaine | '
-                  'Coût : ${member.costPerHour}€/h',
-                ),
-                trailing: IconButton(
-                  tooltip: 'Retirer du groupe',
-                  onPressed: () => onRemoveMember(member),
-                  icon: const Icon(Icons.remove_circle_outline),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: ListTile(
+                  dense: true,
+                  tileColor: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHighest
+                      .withValues(alpha: 0.30),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  leading: Icon(_resourceTypeIcon(member.resourceType)),
+                  title: Text(
+                    member.resourceName,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    '${_resourceTypeLabel(member.resourceType)} · '
+                    '${_formatNumber(member.capacityHoursPerWeek)} h/sem. · '
+                    '${_formatNumber(member.costPerHour)} €/h',
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Retirer du groupe',
+                    onPressed: () => onRemoveMember(member),
+                    icon: const Icon(Icons.remove_circle_outline),
+                  ),
                 ),
               );
             }),
-          const SizedBox(height: 8),
         ],
       ),
     );
   }
+}
+
+class _ResourceGroupsSummary extends StatelessWidget {
+  final List<ResourceGroup> groups;
+
+  const _ResourceGroupsSummary({required this.groups});
+
+  @override
+  Widget build(BuildContext context) {
+    final memberships = groups.expand((group) => group.members).toList();
+    final uniqueResources = memberships
+        .map((member) => member.resourceId)
+        .toSet()
+        .length;
+    final totalCapacity = memberships.fold<double>(
+      0,
+      (sum, member) => sum + member.capacityHoursPerWeek,
+    );
+    final totalHourlyCost = memberships.fold<double>(
+      0,
+      (sum, member) => sum + member.costPerHour,
+    );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _GroupMetric(
+              icon: Icons.group_work_outlined,
+              label: 'Groupes',
+              value: '${groups.length}',
+            ),
+            _GroupMetric(
+              icon: Icons.people_outline,
+              label: 'Membres cumulés',
+              value: '${memberships.length}',
+              tooltip: 'Une même ressource peut appartenir à plusieurs groupes.',
+            ),
+            _GroupMetric(
+              icon: Icons.person_outline,
+              label: 'Ressources uniques',
+              value: '$uniqueResources',
+            ),
+            _GroupMetric(
+              icon: Icons.access_time_outlined,
+              label: 'Capacité cumulée',
+              value: '${_formatNumber(totalCapacity)} h/sem.',
+            ),
+            _GroupMetric(
+              icon: Icons.euro_outlined,
+              label: 'Coût horaire cumulé',
+              value: '${_formatNumber(totalHourlyCost)} €/h',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ResourceGroupStatsPanel extends StatelessWidget {
+  final _ResourceGroupStats stats;
+
+  const _ResourceGroupStatsPanel({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Wrap(
+        spacing: 20,
+        runSpacing: 12,
+        children: [
+          _GroupSmallStat(
+            icon: Icons.people_outline,
+            label: 'Membres',
+            value: '${stats.memberCount}',
+          ),
+          _GroupSmallStat(
+            icon: Icons.access_time_outlined,
+            label: 'Capacité totale',
+            value: '${_formatNumber(stats.totalCapacity)} h/sem.',
+          ),
+          _GroupSmallStat(
+            icon: Icons.euro_outlined,
+            label: 'Coût cumulé',
+            value: '${_formatNumber(stats.totalHourlyCost)} €/h',
+          ),
+          _GroupSmallStat(
+            icon: Icons.functions_outlined,
+            label: 'Coût moyen',
+            value: '${_formatNumber(stats.averageHourlyCost)} €/h',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupMetric extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final String? tooltip;
+
+  const _GroupMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Container(
+      width: 205,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return tooltip == null
+        ? content
+        : Tooltip(message: tooltip!, child: content);
+  }
+}
+
+class _GroupSmallStat extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _GroupSmallStat({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 180,
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 18,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: Theme.of(context).textTheme.bodySmall),
+                Text(
+                  value,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupCompactChip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _GroupCompactChip({
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 260),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResourceGroupStats {
+  final int memberCount;
+  final double totalCapacity;
+  final double totalHourlyCost;
+  final double averageHourlyCost;
+
+  const _ResourceGroupStats({
+    required this.memberCount,
+    required this.totalCapacity,
+    required this.totalHourlyCost,
+    required this.averageHourlyCost,
+  });
+
+  factory _ResourceGroupStats.fromGroup(ResourceGroup group) {
+    final count = group.members.length;
+    final capacity = group.members.fold<double>(
+      0,
+      (sum, member) => sum + member.capacityHoursPerWeek,
+    );
+    final cost = group.members.fold<double>(
+      0,
+      (sum, member) => sum + member.costPerHour,
+    );
+
+    return _ResourceGroupStats(
+      memberCount: count,
+      totalCapacity: capacity,
+      totalHourlyCost: cost,
+      averageHourlyCost: count == 0 ? 0 : cost / count,
+    );
+  }
+}
+
+IconData _resourceTypeIcon(String type) {
+  switch (type.toLowerCase()) {
+    case 'team':
+      return Icons.groups_outlined;
+    case 'material':
+      return Icons.build_outlined;
+    default:
+      return Icons.person_outline;
+  }
+}
+
+String _resourceTypeLabel(String type) {
+  switch (type.toLowerCase()) {
+    case 'team':
+      return 'Équipe';
+    case 'material':
+      return 'Matériel';
+    case 'person':
+      return 'Personne';
+    default:
+      return type;
+  }
+}
+
+String _formatNumber(num value) {
+  final number = value.toDouble();
+
+  if (number == number.roundToDouble()) {
+    return number.toInt().toString();
+  }
+
+  return number.toStringAsFixed(1);
 }
 
 class _ResourceGroupsData {

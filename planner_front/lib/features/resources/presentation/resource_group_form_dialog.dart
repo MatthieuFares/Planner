@@ -15,11 +15,13 @@ class ResourceGroupFormDialog extends StatefulWidget {
       _ResourceGroupFormDialogState();
 }
 
-class _ResourceGroupFormDialogState extends State<ResourceGroupFormDialog> {
+class _ResourceGroupFormDialogState
+    extends State<ResourceGroupFormDialog> {
   final _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _nameController;
-  late final TextEditingController _descriptionController;
+  late final TextEditingController
+      _descriptionController;
 
   bool get _isEditMode => widget.group != null;
 
@@ -31,7 +33,8 @@ class _ResourceGroupFormDialogState extends State<ResourceGroupFormDialog> {
       text: widget.group?.name ?? '',
     );
 
-    _descriptionController = TextEditingController(
+    _descriptionController =
+        TextEditingController(
       text: widget.group?.description ?? '',
     );
   }
@@ -44,32 +47,53 @@ class _ResourceGroupFormDialogState extends State<ResourceGroupFormDialog> {
   }
 
   void _submit() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     final name = _nameController.text.trim();
-    final description = _descriptionController.text.trim();
+    final description =
+        _descriptionController.text.trim();
 
     if (_isEditMode) {
       Navigator.of(context).pop(
         ResourceGroupUpdateRequest(
           name: name,
-          description: description.isEmpty ? null : description,
+          description:
+              description.isEmpty ? null : description,
         ),
       );
-    } else {
-      Navigator.of(context).pop(
-        ResourceGroupCreateRequest(
-          name: name,
-          description: description.isEmpty ? null : description,
-        ),
-      );
+
+      return;
     }
+
+    Navigator.of(context).pop(
+      ResourceGroupCreateRequest(
+        name: name,
+        description:
+            description.isEmpty ? null : description,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(_isEditMode ? 'Modifier le groupe' : 'Nouveau groupe'),
+      title: Row(
+        children: [
+          Icon(
+            _isEditMode
+                ? Icons.edit_outlined
+                : Icons.group_add_outlined,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            _isEditMode
+                ? 'Modifier le groupe'
+                : 'Nouveau groupe',
+          ),
+        ],
+      ),
       content: SizedBox(
         width: 520,
         child: Form(
@@ -81,11 +105,21 @@ class _ResourceGroupFormDialogState extends State<ResourceGroupFormDialog> {
                 controller: _nameController,
                 decoration: const InputDecoration(
                   labelText: 'Nom du groupe',
+                  prefixIcon:
+                      Icon(Icons.group_work_outlined),
                   border: OutlineInputBorder(),
                 ),
+                autofocus: !_isEditMode,
+                textInputAction:
+                    TextInputAction.next,
                 validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
+                  if (value == null ||
+                      value.trim().isEmpty) {
                     return 'Le nom du groupe est obligatoire.';
+                  }
+
+                  if (value.trim().length > 100) {
+                    return 'Le nom ne peut pas dépasser 100 caractères.';
                   }
 
                   return null;
@@ -93,12 +127,17 @@ class _ResourceGroupFormDialogState extends State<ResourceGroupFormDialog> {
               ),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _descriptionController,
+                controller:
+                    _descriptionController,
                 decoration: const InputDecoration(
                   labelText: 'Description',
+                  prefixIcon:
+                      Icon(Icons.notes_outlined),
                   border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
                 ),
                 maxLines: 3,
+                maxLength: 500,
               ),
             ],
           ),
@@ -106,12 +145,22 @@ class _ResourceGroupFormDialogState extends State<ResourceGroupFormDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () =>
+              Navigator.of(context).pop(),
           child: const Text('Annuler'),
         ),
-        FilledButton(
+        FilledButton.icon(
           onPressed: _submit,
-          child: Text(_isEditMode ? 'Enregistrer' : 'Créer'),
+          icon: Icon(
+            _isEditMode
+                ? Icons.save_outlined
+                : Icons.add,
+          ),
+          label: Text(
+            _isEditMode
+                ? 'Enregistrer'
+                : 'Créer',
+          ),
         ),
       ],
     );

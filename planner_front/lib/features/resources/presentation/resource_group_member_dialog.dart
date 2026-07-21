@@ -18,15 +18,37 @@ class ResourceGroupMemberDialog extends StatefulWidget {
       _ResourceGroupMemberDialogState();
 }
 
-class _ResourceGroupMemberDialogState extends State<ResourceGroupMemberDialog> {
+class _ResourceGroupMemberDialogState
+    extends State<ResourceGroupMemberDialog> {
   int? _groupId;
   int? _resourceId;
+
+  bool get _hasFixedGroup => widget.groups.length == 1;
+
+  ResourceGroup? get _fixedGroup {
+    if (!_hasFixedGroup) return null;
+
+    return widget.groups.first;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    if (_hasFixedGroup) {
+      _groupId = widget.groups.first.id;
+    }
+  }
 
   void _submit() {
     if (_groupId == null || _resourceId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Merci de sélectionner un groupe et une ressource.'),
+        SnackBar(
+          content: Text(
+            _groupId == null
+                ? 'Merci de sélectionner un groupe et une ressource.'
+                : 'Merci de sélectionner une ressource.',
+          ),
         ),
       );
       return;
@@ -42,50 +64,77 @@ class _ResourceGroupMemberDialogState extends State<ResourceGroupMemberDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final fixedGroup = _fixedGroup;
+
     return AlertDialog(
-      title: const Text('Ajouter une ressource à un groupe'),
+      title: Text(
+        fixedGroup == null
+            ? 'Ajouter une ressource à un groupe'
+            : 'Ajouter une ressource à « ${fixedGroup.name} »',
+      ),
       content: SizedBox(
         width: 560,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            DropdownButtonFormField<int>(
-              initialValue: _groupId,
-              decoration: const InputDecoration(
-                labelText: 'Groupe',
-                border: OutlineInputBorder(),
+            if (fixedGroup != null)
+              _FixedGroupCard(group: fixedGroup)
+            else
+              DropdownButtonFormField<int>(
+                initialValue: _groupId,
+                decoration: const InputDecoration(
+                  labelText: 'Groupe',
+                  border: OutlineInputBorder(),
+                ),
+                items: widget.groups.map((group) {
+                  return DropdownMenuItem<int>(
+                    value: group.id,
+                    child: Text(
+                      '#${group.id} - ${group.name}',
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _groupId = value;
+                  });
+                },
               ),
-              items: widget.groups.map((group) {
-                return DropdownMenuItem<int>(
-                  value: group.id,
-                  child: Text('#${group.id} - ${group.name}'),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _groupId = value;
-                });
-              },
-            ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
               initialValue: _resourceId,
               decoration: const InputDecoration(
                 labelText: 'Ressource',
                 border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person_add_alt),
               ),
               items: widget.resources.map((resource) {
                 return DropdownMenuItem<int>(
                   value: resource.id,
-                  child: Text('#${resource.id} - ${resource.name}'),
+                  child: Text(
+                    '#${resource.id} - ${resource.name}',
+                  ),
                 );
               }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _resourceId = value;
-                });
-              },
+              onChanged: widget.resources.isEmpty
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _resourceId = value;
+                      });
+                    },
             ),
+            if (widget.resources.isEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Aucune ressource disponible à ajouter.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -94,11 +143,90 @@ class _ResourceGroupMemberDialogState extends State<ResourceGroupMemberDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Annuler'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Ajouter'),
+        FilledButton.icon(
+          onPressed:
+              widget.resources.isEmpty ? null : _submit,
+          icon: const Icon(Icons.add),
+          label: const Text('Ajouter'),
         ),
       ],
+    );
+  }
+}
+
+class _FixedGroupCard extends StatelessWidget {
+  final ResourceGroup group;
+
+  const _FixedGroupCard({
+    required this.group,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .primaryContainer
+            .withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context)
+              .colorScheme
+              .primary
+              .withValues(alpha: 0.20),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.group_work_outlined,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Groupe sélectionné',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  group.name,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                if (group.description?.isNotEmpty == true) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    group.description!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Chip(
+            label: Text(
+              '${group.members.length} membre(s)',
+            ),
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
     );
   }
 }
