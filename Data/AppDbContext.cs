@@ -39,6 +39,25 @@ namespace PlannerAPI.Data
         public DbSet<ProjectBaselineTask> ProjectBaselineTasks =>
             Set<ProjectBaselineTask>();
 
+        public DbSet<PlanningVersion> PlanningVersions =>
+            Set<PlanningVersion>();
+        public DbSet<PlanningVersionTask> PlanningVersionTasks =>
+            Set<PlanningVersionTask>();
+        public DbSet<PlanningVersionItem> PlanningVersionItems =>
+            Set<PlanningVersionItem>();
+        public DbSet<PlanningVersionDependency> PlanningVersionDependencies =>
+            Set<PlanningVersionDependency>();
+        public DbSet<PlanningVersionAssignment> PlanningVersionAssignments =>
+            Set<PlanningVersionAssignment>();
+        public DbSet<PlanningVersionCalendar> PlanningVersionCalendars =>
+            Set<PlanningVersionCalendar>();
+        public DbSet<PlanningVersionCalendarException>
+            PlanningVersionCalendarExceptions =>
+                Set<PlanningVersionCalendarException>();
+        public DbSet<PlanningVersionCalendarPeriod>
+            PlanningVersionCalendarPeriods =>
+                Set<PlanningVersionCalendarPeriod>();
+
         protected override void OnModelCreating(
             ModelBuilder modelBuilder)
         {
@@ -46,6 +65,10 @@ namespace PlannerAPI.Data
 
             modelBuilder.Entity<PlannerTask>()
                 .ToTable("PlannerTasks");
+
+            modelBuilder.Entity<PlannerTask>()
+                .Property(t => t.WorkloadHours)
+                .HasPrecision(18, 2);
 
             // Project -> PlannerTasks
             modelBuilder.Entity<PlannerTask>()
@@ -77,6 +100,14 @@ namespace PlannerAPI.Data
                 })
                 .IsUnique();
 
+            modelBuilder.Entity<Resource>()
+                .Property(r => r.CapacityHoursPerWeek)
+                .HasPrecision(18, 2);
+
+            modelBuilder.Entity<Resource>()
+                .Property(r => r.CostPerHour)
+                .HasPrecision(18, 2);
+
             // ResourceAssignment -> PlannerTask
             modelBuilder.Entity<ResourceAssignment>()
                 .HasOne(ra => ra.Task)
@@ -97,6 +128,10 @@ namespace PlannerAPI.Data
                 .WithMany()
                 .HasForeignKey(ra => ra.ResourceGroupId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ResourceAssignment>()
+                .Property(ra => ra.WorkloadHours)
+                .HasPrecision(18, 2);
 
             // ResourceGroupMember -> ResourceGroup
             modelBuilder.Entity<ResourceGroupMember>()
@@ -226,6 +261,159 @@ namespace PlannerAPI.Data
                 {
                     t.ProjectBaselineId,
                     t.TaskId
+                });
+
+            // =========================================================
+            // Planning versions
+            // =========================================================
+
+            // Project -> PlanningVersions
+            modelBuilder.Entity<PlanningVersion>()
+                .HasOne(v => v.Project)
+                .WithMany()
+                .HasForeignKey(v => v.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PlanningVersion>()
+                .HasIndex(v => new
+                {
+                    v.ProjectId,
+                    v.VersionNumber
+                })
+                .IsUnique();
+
+            modelBuilder.Entity<PlanningVersion>()
+                .HasIndex(v => new
+                {
+                    v.ProjectId,
+                    v.CreatedAt
+                });
+
+            // PlanningVersion -> Tasks
+            modelBuilder.Entity<PlanningVersionTask>()
+                .HasOne(t => t.PlanningVersion)
+                .WithMany(v => v.Tasks)
+                .HasForeignKey(t => t.PlanningVersionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PlanningVersionTask>()
+                .HasIndex(t => new
+                {
+                    t.PlanningVersionId,
+                    t.OriginalTaskId
+                })
+                .IsUnique();
+
+            modelBuilder.Entity<PlanningVersionTask>()
+                .Property(t => t.WorkloadHours)
+                .HasPrecision(18, 2);
+
+            // PlanningVersion -> Items
+            modelBuilder.Entity<PlanningVersionItem>()
+                .HasOne(i => i.PlanningVersion)
+                .WithMany(v => v.Items)
+                .HasForeignKey(i => i.PlanningVersionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PlanningVersionItem>()
+                .HasIndex(i => new
+                {
+                    i.PlanningVersionId,
+                    i.OriginalPlanningItemId
+                })
+                .IsUnique();
+
+            modelBuilder.Entity<PlanningVersionItem>()
+                .HasIndex(i => new
+                {
+                    i.PlanningVersionId,
+                    i.OriginalParentId,
+                    i.SortOrder
+                });
+
+            // PlanningVersion -> Dependencies
+            modelBuilder.Entity<PlanningVersionDependency>()
+                .HasOne(d => d.PlanningVersion)
+                .WithMany(v => v.Dependencies)
+                .HasForeignKey(d => d.PlanningVersionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PlanningVersionDependency>()
+                .HasIndex(d => new
+                {
+                    d.PlanningVersionId,
+                    d.OriginalDependencyId
+                })
+                .IsUnique();
+
+            modelBuilder.Entity<PlanningVersionDependency>()
+                .HasIndex(d => new
+                {
+                    d.PlanningVersionId,
+                    d.OriginalPredecessorTaskId,
+                    d.OriginalSuccessorTaskId,
+                    d.Type
+                });
+
+            // PlanningVersion -> Assignments
+            modelBuilder.Entity<PlanningVersionAssignment>()
+                .HasOne(a => a.PlanningVersion)
+                .WithMany(v => v.Assignments)
+                .HasForeignKey(a => a.PlanningVersionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PlanningVersionAssignment>()
+                .HasIndex(a => new
+                {
+                    a.PlanningVersionId,
+                    a.OriginalAssignmentId
+                })
+                .IsUnique();
+
+            modelBuilder.Entity<PlanningVersionAssignment>()
+                .Property(a => a.WorkloadHours)
+                .HasPrecision(18, 2);
+
+            // PlanningVersion -> Calendar
+            modelBuilder.Entity<PlanningVersionCalendar>()
+                .HasOne(c => c.PlanningVersion)
+                .WithOne(v => v.Calendar)
+                .HasForeignKey<PlanningVersionCalendar>(
+                    c => c.PlanningVersionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PlanningVersionCalendar>()
+                .HasIndex(c => c.PlanningVersionId)
+                .IsUnique();
+
+            // PlanningVersionCalendar -> Exceptions
+            modelBuilder.Entity<PlanningVersionCalendarException>()
+                .HasOne(e => e.PlanningVersionCalendar)
+                .WithMany(c => c.Exceptions)
+                .HasForeignKey(e => e.PlanningVersionCalendarId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PlanningVersionCalendarException>()
+                .HasIndex(e => new
+                {
+                    e.PlanningVersionCalendarId,
+                    e.Date
+                })
+                .IsUnique();
+
+            // PlanningVersionCalendar -> Periods
+            modelBuilder.Entity<PlanningVersionCalendarPeriod>()
+                .HasOne(p => p.PlanningVersionCalendar)
+                .WithMany(c => c.Periods)
+                .HasForeignKey(p => p.PlanningVersionCalendarId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PlanningVersionCalendarPeriod>()
+                .HasIndex(p => new
+                {
+                    p.PlanningVersionCalendarId,
+                    p.StartDate,
+                    p.EndDate
                 });
         }
     }

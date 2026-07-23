@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../dependencies/presentation/dependency_tab.dart';
 import '../../gantt/presentation/gantt_view.dart';
 import '../../project_baseline/presentation/project_baseline_view.dart';
 import '../../project_calendar/presentation/project_calendar_view.dart';
+import '../../planning_versions/presentation/planning_versions_view.dart';
 import '../../resources/presentation/resources_tab.dart';
-import '../../tasks/presentation/task_list.dart';
 import '../data/project_api.dart';
 import '../data/project_insights_api.dart';
 import '../data/project_model.dart';
@@ -159,11 +158,11 @@ class _ProjectDetailScreenState
     WarningsNavigationTarget target,
   ) {
     final tabIndex = switch (target) {
-      WarningsNavigationTarget.tasks => 1,
-      WarningsNavigationTarget.dependencies => 2,
-      WarningsNavigationTarget.resources => 3,
-      WarningsNavigationTarget.calendar => 4,
-      WarningsNavigationTarget.gantt => 6,
+      WarningsNavigationTarget.tasks => 5,
+      WarningsNavigationTarget.dependencies => 5,
+      WarningsNavigationTarget.resources => 1,
+      WarningsNavigationTarget.calendar => 2,
+      WarningsNavigationTarget.gantt => 5,
     };
 
     setState(() {
@@ -189,29 +188,26 @@ class _ProjectDetailScreenState
         );
 
       case 1:
-        return TaskList(projectId: widget.projectId);
-
-      case 2:
-        return DependenciesTab(
-          projectId: widget.projectId,
-        );
-
-      case 3:
         return ResourcesTab(
           projectId: widget.projectId,
         );
 
-      case 4:
+      case 2:
         return ProjectCalendarView(
           projectId: widget.projectId,
         );
 
-      case 5:
+      case 3:
         return ProjectBaselineView(
           projectId: widget.projectId,
         );
 
-      case 6:
+      case 4:
+        return PlanningVersionsView(
+          projectId: widget.projectId,
+        );
+
+      case 5:
         return GanttView(
           projectId: widget.projectId,
         );
@@ -310,16 +306,6 @@ class _ProjectDetailScreenState
                 label: 'Dashboard',
               ),
               NavigationDestination(
-                icon: Icon(Icons.checklist),
-                label: 'Tâches',
-              ),
-              NavigationDestination(
-                icon: Icon(
-                  Icons.account_tree_outlined,
-                ),
-                label: 'Dépendances',
-              ),
-              NavigationDestination(
                 icon: Icon(Icons.groups_outlined),
                 label: 'Ressources',
               ),
@@ -340,10 +326,15 @@ class _ProjectDetailScreenState
                 label: 'Baselines',
               ),
               NavigationDestination(
+                icon: Icon(Icons.history_outlined),
+                selectedIcon: Icon(Icons.history),
+                label: 'Versions',
+              ),
+              NavigationDestination(
                 icon: Icon(Icons.timeline),
                 label: 'Gantt',
               ),
-            ],
+            ]
           ),
           const Divider(height: 1),
           Expanded(
