@@ -8,6 +8,7 @@ class TaskFormResult {
   final int offsetDays;
 
   final int? resourceId;
+  final int? resourceGroupId;
   final double? workloadHours;
   final int allocationPercent;
 
@@ -17,6 +18,7 @@ class TaskFormResult {
     this.dependencyType = 'FS',
     this.offsetDays = 0,
     this.resourceId,
+    this.resourceGroupId,
     this.workloadHours,
     this.allocationPercent = 100,
   });
@@ -24,5 +26,7 @@ class TaskFormResult {
   bool get hasPredecessor => predecessorTaskId != null;
 
   bool get hasAssignment =>
-      resourceId != null && workloadHours != null && workloadHours! > 0;
+      (resourceId != null || resourceGroupId != null) &&
+      workloadHours != null &&
+      workloadHours! > 0;
 }

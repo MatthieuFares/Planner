@@ -2,11 +2,13 @@ using Microsoft.EntityFrameworkCore;
 using PlannerAPI.Data;
 using PlannerAPI.Services.Implementations;
 using PlannerAPI.Services.Interfaces;
+using PlannerAPI.Services.ProjectInterop;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<ITaskDependencyService, TaskDependencyService>();
@@ -21,10 +23,17 @@ builder.Services.AddScoped<IPlanningItemService, PlanningItemService>();
 builder.Services.AddScoped<IProjectCalendarService, ProjectCalendarService>();
 builder.Services.AddScoped<IProjectCalendarExceptionService, ProjectCalendarExceptionService>();
 builder.Services.AddScoped<IProjectBaselineService, ProjectBaselineService>();
-builder.Services.AddScoped<IProjectCalendarPeriodService,ProjectCalendarPeriodService>();
-builder.Services.AddScoped<IPlanningVersionService,PlanningVersionService>();
+builder.Services.AddScoped<IProjectCalendarPeriodService, ProjectCalendarPeriodService>();
+builder.Services.AddScoped<IPlanningVersionService, PlanningVersionService>();
+
+builder.Services.AddScoped<MicrosoftProjectXmlParser>();
+builder.Services.AddScoped<ProjectInteropImportService>();
+builder.Services.AddScoped<MicrosoftProjectXmlWriter>();
+builder.Services.AddScoped<ProjectInteropExportService>();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

@@ -14,9 +14,16 @@ import '../../project_calendar/data/project_calendar_period_model.dart';
 import '../../project_calendar/utils/project_working_day_calculator.dart';
 
 import '../../resources/data/resource_api.dart';
+import '../../resources/data/resource_group_api.dart';
+import '../../resources/data/resource_group_model.dart';
 import '../../resources/data/resource_model.dart';
 
 import 'task_form_result.dart';
+
+enum _TaskAssignmentTargetType {
+  resource,
+  group,
+}
 
 class TaskFormDialog extends StatefulWidget {
   final int projectId;
@@ -35,6 +42,7 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
 
   final TaskApi _taskApi = TaskApi();
   final ResourceApi _resourceApi = ResourceApi();
+  final ResourceGroupApi _groupApi = ResourceGroupApi();
 
   final ProjectCalendarApi _calendarApi = ProjectCalendarApi();
   final ProjectCalendarExceptionApi _exceptionApi =
@@ -63,7 +71,10 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
   double _progressPercent = 0;
 
   int? _selectedPredecessorTaskId;
+  _TaskAssignmentTargetType _assignmentTargetType =
+      _TaskAssignmentTargetType.resource;
   int? _selectedResourceId;
+  int? _selectedResourceGroupId;
 
   @override
   void initState() {
@@ -104,10 +115,12 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
           await _taskApi.getTasksByProject(widget.projectId);
 
       final resources = await _resourceApi.getResources();
+      final groups = await _groupApi.getGroups();
 
       final options = _TaskFormOptions(
         tasks: tasks,
         resources: resources,
+        groups: groups,
         calendar: calendar,
         exceptions: exceptions,
         periods: periods,
@@ -335,8 +348,13 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
       _workloadHoursController.text,
     );
 
+    final bool hasAssignmentTarget =
+        _assignmentTargetType == _TaskAssignmentTargetType.resource
+            ? _selectedResourceId != null
+            : _selectedResourceGroupId != null;
+
     final int allocationPercent =
-        _selectedResourceId == null
+        !hasAssignmentTarget
             ? 100
             : int.parse(
                 _allocationPercentController.text,
@@ -362,7 +380,14 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
           _selectedPredecessorTaskId,
       dependencyType: 'FS',
       offsetDays: 0,
-      resourceId: _selectedResourceId,
+      resourceId:
+          _assignmentTargetType == _TaskAssignmentTargetType.resource
+              ? _selectedResourceId
+              : null,
+      resourceGroupId:
+          _assignmentTargetType == _TaskAssignmentTargetType.group
+              ? _selectedResourceGroupId
+              : null,
       workloadHours: workloadHours,
       allocationPercent: allocationPercent,
     );
@@ -401,6 +426,8 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
         options?.tasks ?? const <PlannerTask>[];
     final resources =
         options?.resources ?? const <Resource>[];
+    final groups =
+        options?.groups ?? const <ResourceGroup>[];
 
     return AlertDialog(
       title: const Text('Nouvelle tâche'),
@@ -663,49 +690,141 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
                 ),
                 const SizedBox(height: 8),
 
-                DropdownButtonFormField<int?>(
-                  initialValue: _selectedResourceId,
-                  decoration: const InputDecoration(
-                    labelText: 'Ressource assignée',
-                    helperText:
-                        'Optionnel — une ressource à la création',
-                    border: OutlineInputBorder(),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Type de cible',
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelLarge,
                   ),
-                  items: <DropdownMenuItem<int?>>[
-                    const DropdownMenuItem<int?>(
-                      value: null,
-                      child: Text('Aucune ressource'),
+                ),
+                const SizedBox(height: 6),
+
+                SegmentedButton<_TaskAssignmentTargetType>(
+                  segments: const [
+                    ButtonSegment<_TaskAssignmentTargetType>(
+                      value: _TaskAssignmentTargetType.resource,
+                      icon: Icon(Icons.person_outline),
+                      label: Text('Ressource'),
                     ),
-                    ...resources.map(
-                      (Resource resource) {
-                        return DropdownMenuItem<int?>(
-                          value: resource.id,
-                          child: Text(
-                            '${resource.name} · '
-                            '${resource.type} · '
-                            '${resource.costPerHour.toStringAsFixed(0)} €/h',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      },
+                    ButtonSegment<_TaskAssignmentTargetType>(
+                      value: _TaskAssignmentTargetType.group,
+                      icon: Icon(Icons.groups_outlined),
+                      label: Text('Groupe'),
                     ),
                   ],
-                  onChanged: options == null
+                  selected: <_TaskAssignmentTargetType>{
+                    _assignmentTargetType,
+                  },
+                  onSelectionChanged: options == null
                       ? null
-                      : (int? value) {
-                          setState(() {
-                            _selectedResourceId = value;
+                      : (selection) {
+                          final targetType = selection.first;
 
-                            if (_selectedResourceId == null) {
-                              _workloadHoursController.clear();
-                              _allocationPercentController.text =
-                                  '100';
-                            }
+                          setState(() {
+                            _assignmentTargetType = targetType;
+                            _selectedResourceId = null;
+                            _selectedResourceGroupId = null;
+                            _workloadHoursController.clear();
+                            _allocationPercentController.text = '100';
                           });
                         },
                 ),
+                const SizedBox(height: 12),
 
-                if (_selectedResourceId != null) ...[
+                if (_assignmentTargetType ==
+                    _TaskAssignmentTargetType.resource)
+                  DropdownButtonFormField<int?>(
+                    initialValue: _selectedResourceId,
+                    decoration: const InputDecoration(
+                      labelText: 'Ressource assignée',
+                      helperText:
+                          'Optionnel — une ressource à la création',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: <DropdownMenuItem<int?>>[
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Aucune ressource'),
+                      ),
+                      ...resources.map(
+                        (Resource resource) {
+                          return DropdownMenuItem<int?>(
+                            value: resource.id,
+                            child: Text(
+                              '${resource.name} · '
+                              '${resource.type} · '
+                              '${resource.costPerHour.toStringAsFixed(0)} €/h',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                    onChanged: options == null
+                        ? null
+                        : (int? value) {
+                            setState(() {
+                              _selectedResourceId = value;
+                              _selectedResourceGroupId = null;
+
+                              if (value == null) {
+                                _workloadHoursController.clear();
+                                _allocationPercentController.text =
+                                    '100';
+                              }
+                            });
+                          },
+                  )
+                else
+                  DropdownButtonFormField<int?>(
+                    initialValue: _selectedResourceGroupId,
+                    decoration: const InputDecoration(
+                      labelText: 'Groupe assigné',
+                      helperText:
+                          'Optionnel — charge répartie sur le groupe',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: <DropdownMenuItem<int?>>[
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Aucun groupe'),
+                      ),
+                      ...groups.map(
+                        (ResourceGroup group) {
+                          return DropdownMenuItem<int?>(
+                            value: group.id,
+                            child: Text(
+                              group.name,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                    onChanged: options == null
+                        ? null
+                        : (int? value) {
+                            setState(() {
+                              _selectedResourceGroupId = value;
+                              _selectedResourceId = null;
+
+                              if (value == null) {
+                                _workloadHoursController.clear();
+                                _allocationPercentController.text =
+                                    '100';
+                              }
+                            });
+                          },
+                  ),
+
+                if ((_assignmentTargetType ==
+                            _TaskAssignmentTargetType.resource &&
+                        _selectedResourceId != null) ||
+                    (_assignmentTargetType ==
+                            _TaskAssignmentTargetType.group &&
+                        _selectedResourceGroupId != null)) ...[
                   const SizedBox(height: 12),
                   Row(
                     children: <Widget>[
@@ -725,7 +844,13 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
                             decimal: true,
                           ),
                           validator: (String? value) {
-                            if (_selectedResourceId == null) {
+                            final bool targetSelected =
+                                _assignmentTargetType ==
+                                        _TaskAssignmentTargetType.resource
+                                    ? _selectedResourceId != null
+                                    : _selectedResourceGroupId != null;
+
+                            if (!targetSelected) {
                               return null;
                             }
 
@@ -757,7 +882,13 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
                           keyboardType:
                               TextInputType.number,
                           validator: (String? value) {
-                            if (_selectedResourceId == null) {
+                            final bool targetSelected =
+                                _assignmentTargetType ==
+                                        _TaskAssignmentTargetType.resource
+                                    ? _selectedResourceId != null
+                                    : _selectedResourceGroupId != null;
+
+                            if (!targetSelected) {
                               return null;
                             }
 
@@ -845,6 +976,7 @@ class _TaskFormDialogState extends State<TaskFormDialog> {
 class _TaskFormOptions {
   final List<PlannerTask> tasks;
   final List<Resource> resources;
+  final List<ResourceGroup> groups;
   final ProjectCalendarModel calendar;
   final List<ProjectCalendarExceptionModel> exceptions;
   final List<ProjectCalendarPeriodModel> periods;
@@ -852,6 +984,7 @@ class _TaskFormOptions {
   const _TaskFormOptions({
     required this.tasks,
     required this.resources,
+    required this.groups,
     required this.calendar,
     required this.exceptions,
     required this.periods,

@@ -126,6 +126,17 @@ namespace PlannerAPI.Services.Implementations
             taskItem.IsDone = progress >= 100;
             taskItem.Deadline = dto.Deadline;
 
+            // Un élément de planning lié à une tâche doit toujours
+            // afficher le même nom que la tâche.
+            var linkedPlanningItems = await _context.PlanningItems
+                .Where(i => i.TaskId == id)
+                .ToListAsync();
+
+            foreach (var planningItem in linkedPlanningItems)
+            {
+                planningItem.Name = dto.Title;
+            }
+
             await _context.SaveChangesAsync();
 
             await _taskSchedulingService.RecalculateTaskDatesAsync(taskItem.Id);

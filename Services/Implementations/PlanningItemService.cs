@@ -200,10 +200,15 @@ namespace PlannerAPI.Services.Implementations
             if (!projectExists)
                 throw new InvalidOperationException($"Projet avec l'id {projectId} introuvable.");
 
-            var projectTaskIds = await _context.Tasks
+            var projectTasks = await _context.Tasks
                 .Where(t => t.ProjectId == projectId)
-                .Select(t => t.Id)
+                .OrderBy(t => t.StartDate)
+                .ThenBy(t => t.Id)
                 .ToListAsync();
+
+            var projectTaskIds = projectTasks
+                .Select(t => t.Id)
+                .ToList();
 
             var orphanTaskItems = await _context.PlanningItems
                 .Where(i =>
@@ -223,28 +228,65 @@ namespace PlannerAPI.Services.Implementations
                 await _context.SaveChangesAsync();
             }
 
-            var existingTaskIds = await _context.PlanningItems
+            var linkedTaskItems = await _context.PlanningItems
                 .Where(i =>
                     i.ProjectId == projectId &&
                     i.Type == PlanningItemType.Task &&
                     i.TaskId.HasValue)
-                .Select(i => i.TaskId!.Value)
                 .ToListAsync();
 
-            var tasksToSync = await _context.Tasks
-                .Where(t => t.ProjectId == projectId && !existingTaskIds.Contains(t.Id))
-                .OrderBy(t => t.StartDate)
-                .ThenBy(t => t.Id)
-                .ToListAsync();
+            var projectTasksById = projectTasks
+                .ToDictionary(t => t.Id);
+
+            var renamedItems = 0;
+
+            foreach (var planningItem in linkedTaskItems)
+            {
+                if (!planningItem.TaskId.HasValue)
+                    continue;
+
+                if (!projectTasksById.TryGetValue(
+                        planningItem.TaskId.Value,
+                        out var linkedTask))
+                    continue;
+
+                if (planningItem.Name == linkedTask.Title)
+                    continue;
+
+                planningItem.Name = linkedTask.Title;
+                renamedItems++;
+            }
+
+            if (renamedItems > 0)
+            {
+                await _context.SaveChangesAsync();
+            }
+
+            var existingTaskIds = linkedTaskItems
+                .Where(i => i.TaskId.HasValue)
+                .Select(i => i.TaskId!.Value)
+                .ToHashSet();
+
+            var tasksToSync = projectTasks
+                .Where(t => !existingTaskIds.Contains(t.Id))
+                .ToList();
 
             if (!tasksToSync.Any())
             {
                 await RecalculateProjectWbsCodesAsync(projectId);
 
+                var changes = new List<string>();
+
+                if (renamedItems > 0)
+                    changes.Add($"{renamedItems} nom(s) de tâche mis à jour");
+
+                if (deletedOrphanItems > 0)
+                    changes.Add($"{deletedOrphanItems} élément(s) orphelin(s) supprimé(s)");
+
                 return new PlanningItemSyncResultDto
                 {
-                    Message = deletedOrphanItems > 0
-                        ? $"Synchronisation terminée. {deletedOrphanItems} élément(s) orphelin(s) supprimé(s)."
+                    Message = changes.Any()
+                        ? $"Synchronisation terminée. {string.Join(", ", changes)}."
                         : "Aucune tâche à synchroniser.",
                     CreatedItems = 0
                 };
@@ -307,11 +349,20 @@ namespace PlannerAPI.Services.Implementations
 
             await RecalculateProjectWbsCodesAsync(projectId);
 
+            var resultParts = new List<string>
+            {
+                $"{tasksToSync.Count} tâche(s) créée(s)"
+            };
+
+            if (renamedItems > 0)
+                resultParts.Add($"{renamedItems} nom(s) de tâche mis à jour");
+
+            if (deletedOrphanItems > 0)
+                resultParts.Add($"{deletedOrphanItems} élément(s) orphelin(s) supprimé(s)");
+
             return new PlanningItemSyncResultDto
             {
-                Message = deletedOrphanItems > 0
-                    ? $"Synchronisation terminée. {tasksToSync.Count} tâche(s) créée(s), {deletedOrphanItems} élément(s) orphelin(s) supprimé(s)."
-                    : $"Synchronisation terminée. {tasksToSync.Count} tâche(s) créée(s).",
+                Message = $"Synchronisation terminée. {string.Join(", ", resultParts)}.",
                 CreatedItems = tasksToSync.Count
             };
         }

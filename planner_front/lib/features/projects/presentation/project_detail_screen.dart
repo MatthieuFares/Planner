@@ -1,3 +1,4 @@
+import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -8,7 +9,9 @@ import '../../planning_versions/presentation/planning_versions_view.dart';
 import '../../resources/presentation/resources_tab.dart';
 import '../data/project_api.dart';
 import '../data/project_insights_api.dart';
+import '../data/project_interop_api.dart';
 import '../data/project_model.dart';
+import '../export/dashboard_export_controller.dart';
 import 'resource_analysis_card.dart';
 import 'summary_card.dart';
 import 'warnings_panel.dart';
@@ -44,8 +47,13 @@ class _ProjectDetailScreenState
   final ProjectApi _projectApi = ProjectApi();
   final ProjectInsightsApi _insightsApi =
       ProjectInsightsApi();
+  final ProjectInteropApi _projectInteropApi =
+      ProjectInteropApi();
+  final DashboardExportController _dashboardExportController =
+      DashboardExportController();
 
   int _selectedTabIndex = 0;
+  bool _isExportingProjectXml = false;
 
   late Future<Project?> _projectFuture;
   late Future<_ProjectInsightsData> _insightsFuture;
@@ -107,6 +115,118 @@ class _ProjectDetailScreenState
       _loadProject();
       _loadInsights();
     });
+  }
+
+  Future<String> _exportDashboardPdf(
+    String fileName,
+  ) {
+    return _dashboardExportController.saveDashboardPdf(
+      widget.projectId,
+      fileName: fileName,
+    );
+  }
+
+  Future<String> _buildDashboardDefaultFileName() async {
+    try {
+      final project = await _projectFuture;
+
+      if (project != null) {
+        final projectCode = project.projectCode?.trim();
+
+        if (projectCode != null && projectCode.isNotEmpty) {
+          return '${projectCode}_board';
+        }
+
+        final projectName = project.name.trim();
+
+        if (projectName.isNotEmpty) {
+          return '${projectName}_board';
+        }
+      }
+    } catch (_) {
+      // Fallback ci-dessous si les informations projet sont indisponibles.
+    }
+
+    final fallbackName = widget.initialProjectName?.trim();
+
+    if (fallbackName != null && fallbackName.isNotEmpty) {
+      return '${fallbackName}_board';
+    }
+
+    return 'Projet_${widget.projectId}_board';
+  }
+
+  Future<void> _exportMicrosoftProjectXml() async {
+    if (_isExportingProjectXml) return;
+
+    setState(() {
+      _isExportingProjectXml = true;
+    });
+
+    try {
+      final exportFile =
+          await _projectInteropApi.exportProjectXml(
+        widget.projectId,
+      );
+
+      if (!mounted) return;
+
+      final baseName =
+          _removeXmlExtension(exportFile.fileName);
+
+      final savedPath =
+          await FileSaver.instance.saveFile(
+        name: baseName,
+        bytes: exportFile.bytes,
+        fileExtension: 'xml',
+        mimeType: MimeType.xml,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Microsoft Project XML exporté : '
+            '$savedPath',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erreur pendant l’export Microsoft Project : '
+            '$error',
+          ),
+          backgroundColor:
+              Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExportingProjectXml = false;
+        });
+      }
+    }
+  }
+
+  String _removeXmlExtension(String fileName) {
+    final trimmed = fileName.trim();
+
+    if (trimmed.toLowerCase().endsWith('.xml')) {
+      return trimmed.substring(
+        0,
+        trimmed.length - 4,
+      );
+    }
+
+    return trimmed.isEmpty
+        ? 'Projet_${widget.projectId}_project'
+        : trimmed;
   }
 
   void _updateDashboardOrder(
@@ -184,6 +304,9 @@ class _ProjectDetailScreenState
           onViewModeChanged:
               _updateDashboardViewMode,
           onResetLayout: _resetDashboardLayout,
+          onExportPdf: _exportDashboardPdf,
+          onBuildDefaultFileName:
+              _buildDashboardDefaultFileName,
           onWarningNavigate: _navigateFromWarning,
         );
 
@@ -224,6 +347,9 @@ class _ProjectDetailScreenState
           onViewModeChanged:
               _updateDashboardViewMode,
           onResetLayout: _resetDashboardLayout,
+          onExportPdf: _exportDashboardPdf,
+          onBuildDefaultFileName:
+              _buildDashboardDefaultFileName,
           onWarningNavigate: _navigateFromWarning,
         );
     }
@@ -248,6 +374,23 @@ class _ProjectDetailScreenState
           },
         ),
         actions: [
+          IconButton(
+            tooltip: 'Exporter Microsoft Project XML',
+            onPressed: _isExportingProjectXml
+                ? null
+                : _exportMicrosoftProjectXml,
+            icon: _isExportingProjectXml
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(
+                    Icons.file_download_outlined,
+                  ),
+          ),
           IconButton(
             tooltip: 'Rafraîchir',
             onPressed: _refreshAll,
@@ -490,6 +633,10 @@ class _DashboardTab extends StatefulWidget {
   final ValueChanged<_DashboardViewMode>
       onViewModeChanged;
   final VoidCallback onResetLayout;
+  final Future<String> Function(String fileName)
+      onExportPdf;
+  final Future<String> Function()
+      onBuildDefaultFileName;
   final ValueChanged<WarningsNavigationTarget>
       onWarningNavigate;
 
@@ -502,6 +649,8 @@ class _DashboardTab extends StatefulWidget {
     required this.onVisibilityChanged,
     required this.onViewModeChanged,
     required this.onResetLayout,
+    required this.onExportPdf,
+    required this.onBuildDefaultFileName,
     required this.onWarningNavigate,
   });
 
@@ -513,6 +662,114 @@ class _DashboardTab extends StatefulWidget {
 class _DashboardTabState
     extends State<_DashboardTab> {
   bool _isOrganizing = false;
+  bool _isExportingPdf = false;
+
+  Future<void> _exportPdf() async {
+    if (_isExportingPdf) return;
+
+    final defaultFileName =
+        await widget.onBuildDefaultFileName();
+
+    if (!mounted) return;
+
+    final fileNameController = TextEditingController(
+      text: defaultFileName,
+    );
+
+    final fileName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.picture_as_pdf_outlined),
+              SizedBox(width: 10),
+              Text('Exporter le Dashboard'),
+            ],
+          ),
+          content: SizedBox(
+            width: 460,
+            child: TextField(
+              controller: fileNameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Nom du fichier',
+                hintText: 'Ex. RECETTE-01_board',
+                suffixText: '.pdf',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (value) {
+                final trimmed = value.trim();
+
+                if (trimmed.isNotEmpty) {
+                  Navigator.of(dialogContext).pop(trimmed);
+                }
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('Annuler'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                final trimmed =
+                    fileNameController.text.trim();
+
+                if (trimmed.isEmpty) return;
+
+                Navigator.of(dialogContext).pop(trimmed);
+              },
+              icon: const Icon(Icons.download_outlined),
+              label: const Text('Exporter'),
+            ),
+          ],
+        );
+      },
+    );
+
+    fileNameController.dispose();
+
+    if (!mounted || fileName == null) return;
+
+    setState(() {
+      _isExportingPdf = true;
+    });
+
+    try {
+      final savedFileName =
+          await widget.onExportPdf(fileName);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Dashboard exporté : $savedFileName',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erreur pendant l’export du Dashboard : $error',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExportingPdf = false;
+        });
+      }
+    }
+  }
 
   Future<void> _showLayoutDialog() async {
     var temporaryOrder =
@@ -770,6 +1027,23 @@ class _DashboardTabState
           onPressed: widget.onResetLayout,
           icon: const Icon(Icons.restart_alt),
           label: const Text('Réinitialiser'),
+        ),
+        FilledButton.icon(
+          onPressed: _isExportingPdf ? null : _exportPdf,
+          icon: _isExportingPdf
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                  ),
+                )
+              : const Icon(Icons.picture_as_pdf_outlined),
+          label: Text(
+            _isExportingPdf
+                ? 'Export en cours...'
+                : 'Exporter le Dashboard',
+          ),
         ),
         Chip(
           avatar: const Icon(

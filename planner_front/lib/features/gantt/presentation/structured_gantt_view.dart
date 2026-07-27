@@ -1,8 +1,10 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/structured_gantt_api.dart';
 import '../data/structured_gantt_model.dart';
+import '../export/gantt_export_controller.dart';
 
 import '../../project_baseline/data/project_baseline_api.dart';
 import '../../project_baseline/data/project_baseline_model.dart';
@@ -26,6 +28,83 @@ import '../../dependencies/data/dependency_model.dart';
 
 import '../../resources/data/resource_assignment_api.dart';
 import '../../resources/data/resource_assignment_model.dart';
+
+String _formatGanttOperationError(Object error) {
+  if (error is DioException) {
+    final response = error.response;
+    final data = response?.data;
+
+    String? backendMessage;
+
+    if (data is String && data.trim().isNotEmpty) {
+      backendMessage = data.trim();
+    } else if (data is Map) {
+      for (final key in const [
+        'message',
+        'detail',
+        'error',
+        'title',
+      ]) {
+        final value = data[key];
+
+        if (value is String && value.trim().isNotEmpty) {
+          backendMessage = value.trim();
+          break;
+        }
+      }
+    }
+
+    final normalized =
+        (backendMessage ?? error.message ?? '').toLowerCase();
+
+    if (normalized.contains('cycle')) {
+      return 'Impossible d’ajouter cette dépendance : '
+          'elle créerait un cycle dans le planning.';
+    }
+
+    if (normalized.contains('dépendance') ||
+        normalized.contains('dependance')) {
+      return backendMessage ??
+          'La dépendance demandée est invalide.';
+    }
+
+    if (response?.statusCode == 400) {
+      return backendMessage ??
+          'La modification demandée est invalide.';
+    }
+
+    if (response?.statusCode == 404) {
+      return backendMessage ??
+          'Un élément nécessaire à la modification est introuvable.';
+    }
+
+    if (response?.statusCode != null &&
+        response!.statusCode! >= 500) {
+      return 'Une erreur serveur est survenue pendant la modification.';
+    }
+
+    if (backendMessage != null) {
+      return backendMessage;
+    }
+
+    if (error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout) {
+      return 'Impossible de contacter le serveur. '
+          'Vérifie que l’API Planner est démarrée.';
+    }
+  }
+
+  final raw = error.toString();
+
+  if (raw.toLowerCase().contains('cycle')) {
+    return 'Impossible d’ajouter cette dépendance : '
+        'elle créerait un cycle dans le planning.';
+  }
+
+  return 'La modification n’a pas pu être enregistrée.';
+}
 
 enum StructuredGanttDisplayMode {
   auto,
@@ -226,6 +305,8 @@ class StructuredGanttView extends StatefulWidget {
 
 class _StructuredGanttViewState extends State<StructuredGanttView> {
   final StructuredGanttApi _ganttApi = StructuredGanttApi();
+  final GanttExportController _ganttExportController =
+      GanttExportController();
   final TaskApi _taskApi = TaskApi();
   final DependencyApi _dependencyApi = DependencyApi();
   final ResourceAssignmentApi _resourceAssignmentApi = ResourceAssignmentApi();
@@ -372,6 +453,21 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     });
   }
 
+  Future<String> _exportGanttPdf({
+    required _StructuredGanttLoadedData loadedData,
+    required String fileName,
+  }) {
+    return _ganttExportController.saveGanttPdf(
+      data: loadedData.gantt,
+      calendar: loadedData.calendar,
+      exceptions: loadedData.exceptions,
+      periods: loadedData.periods,
+      baselineComparison: loadedData.baselineComparison,
+      showBaseline: _showBaselineBars,
+      fileName: fileName,
+    );
+  }
+
   int _getNextSortOrder({
     required List<StructuredGanttItem> items,
     required int? parentId,
@@ -461,7 +557,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
         ResourceAssignmentCreateRequest(
           taskId: createdTask.id,
           resourceId: result.resourceId,
-          resourceGroupId: null,
+          resourceGroupId: result.resourceGroupId,
           workloadHours: result.workloadHours!,
           allocationPercent: result.allocationPercent,
         ),
@@ -713,10 +809,9 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Erreur pendant la modification complète : $error\n'
-            'Le Gantt a été rechargé pour refléter '
-            'les changements éventuellement déjà appliqués.',
+            _formatGanttOperationError(error),
           ),
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
@@ -1276,6 +1371,10 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
           onMoveItem: _moveItem,
           onEditTask: _editTaskFromGantt,
           onDeleteTask: _deleteTaskFromGantt,
+          onExportPdf: (fileName) => _exportGanttPdf(
+            loadedData: loadedData,
+            fileName: fileName,
+          ),
           onZoomIn: _zoomIn,
           onZoomOut: _zoomOut,
         );
@@ -1307,6 +1406,7 @@ class _StructuredGanttChart extends StatefulWidget {
   }) onMoveItem;
   final Future<void> Function(StructuredGanttItem item) onEditTask;
   final Future<void> Function(StructuredGanttItem item) onDeleteTask;
+  final Future<String> Function(String fileName) onExportPdf;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
 
@@ -1330,6 +1430,7 @@ class _StructuredGanttChart extends StatefulWidget {
     required this.onMoveItem,
     required this.onEditTask,
     required this.onDeleteTask,
+    required this.onExportPdf,
     required this.onZoomIn,
     required this.onZoomOut,
   });
@@ -1346,6 +1447,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
   bool _isSyncingLeft = false;
   bool _isSyncingRight = false;
   bool _isTaskPanelCompact = false;
+  bool _isExportingPdf = false;
 
   bool _showStartColumn = true;
   bool _showEndColumn = true;
@@ -1363,6 +1465,129 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
     if (_showDeadlineColumn) count++;
 
     return count;
+  }
+
+  Future<void> _exportPdf() async {
+    if (_isExportingPdf) return;
+
+    final projectCode = widget.data.projectCode.trim();
+    final projectName = widget.data.projectName.trim();
+
+    final exportBaseName = projectCode.isNotEmpty
+        ? projectCode
+        : projectName.isNotEmpty
+            ? projectName
+            : 'Projet_${widget.data.projectId}';
+
+    final fileNameController = TextEditingController(
+      text: '${exportBaseName}_gantt',
+    );
+
+    final fileName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.picture_as_pdf_outlined),
+              SizedBox(width: 10),
+              Text('Exporter le Gantt'),
+            ],
+          ),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: fileNameController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nom du fichier',
+                    hintText: 'Ex. RECETTE-01_gantt',
+                    suffixText: '.pdf',
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (value) {
+                    final trimmed = value.trim();
+
+                    if (trimmed.isNotEmpty) {
+                      Navigator.of(dialogContext).pop(trimmed);
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  widget.baselineComparison != null &&
+                          widget.showBaselineBars
+                      ? 'La baseline actuellement affichée sera incluse.'
+                      : 'L’export utilisera le planning actuellement chargé.',
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('Annuler'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                final trimmed = fileNameController.text.trim();
+
+                if (trimmed.isEmpty) return;
+
+                Navigator.of(dialogContext).pop(trimmed);
+              },
+              icon: const Icon(Icons.download_outlined),
+              label: const Text('Exporter'),
+            ),
+          ],
+        );
+      },
+    );
+
+    fileNameController.dispose();
+
+    if (!mounted || fileName == null) return;
+
+    setState(() {
+      _isExportingPdf = true;
+    });
+
+    try {
+      final savedFileName = await widget.onExportPdf(fileName);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Gantt exporté : $savedFileName',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erreur pendant l’export du Gantt : $error',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExportingPdf = false;
+        });
+      }
+    }
   }
 
   void _toggleTaskPanel() {
@@ -1979,6 +2204,24 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                 onPressed: widget.onZoomIn,
                 icon: const Icon(Icons.zoom_in),
                 label: const Text('Zoom +'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.tonalIcon(
+                onPressed: _isExportingPdf ? null : _exportPdf,
+                icon: _isExportingPdf
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.picture_as_pdf_outlined),
+                label: Text(
+                  _isExportingPdf
+                      ? 'Export...'
+                      : 'Exporter PDF',
+                ),
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
