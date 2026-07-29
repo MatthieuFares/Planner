@@ -1,17 +1,13 @@
 import 'package:dio/dio.dart';
 
-import '../../../core/config/app_config.dart';
+import '../../../core/api/api_client.dart';
 import 'project_calendar_exception_model.dart';
 
 class ProjectCalendarExceptionApi {
-  final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: AppConfig.apiBaseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    ),
-  );
+  final Dio _dio;
+
+  ProjectCalendarExceptionApi({Dio? dio})
+      : _dio = dio ?? ApiClient.dio;
 
   Future<List<ProjectCalendarExceptionModel>> getByProjectId(
     int projectId,
@@ -25,7 +21,8 @@ class ProjectCalendarExceptionApi {
 
       return data
           .map(
-            (item) => ProjectCalendarExceptionModel.fromJson(
+            (item) =>
+                ProjectCalendarExceptionModel.fromJson(
               item as Map<String, dynamic>,
             ),
           )
@@ -33,7 +30,8 @@ class ProjectCalendarExceptionApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur chargement exceptions calendrier : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }
@@ -54,12 +52,15 @@ class ProjectCalendarExceptionApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur création exception calendrier : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }
 
-  Future<void> delete(int exceptionId) async {
+  Future<void> delete(
+    int exceptionId,
+  ) async {
     try {
       await _dio.delete(
         '/ProjectCalendarExceptions/$exceptionId',
@@ -67,7 +68,8 @@ class ProjectCalendarExceptionApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur suppression exception calendrier : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }

@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../../projects/data/project_access_api.dart';
+import '../../projects/data/project_access_model.dart';
 import '../../tasks/data/task_api.dart';
 import '../../tasks/data/task_model.dart';
 import '../data/resource_api.dart';
@@ -37,6 +39,9 @@ class _ResourceAssignmentsTabState
   final ResourceGroupApi _groupApi =
       ResourceGroupApi();
 
+  final ProjectAccessApi _accessApi =
+      ProjectAccessApi();
+
   final ResourceAssignmentApi _assignmentApi =
       ResourceAssignmentApi();
 
@@ -67,42 +72,57 @@ class _ResourceAssignmentsTabState
   }
 
   Future<_AssignmentsData> _fetchData() async {
-    final results = await Future.wait<dynamic>([
+    final baseResults = await Future.wait<dynamic>([
+      _accessApi.getProjectAccess(widget.projectId),
       _taskApi.getTasksByProject(widget.projectId),
-      _resourceApi.getResources(),
-      _groupApi.getGroups(),
       _assignmentApi.getAssignmentsByProject(
         widget.projectId,
       ),
     ]);
 
+    final access =
+        baseResults[0] as ProjectAccessModel;
+
     final tasks =
-        List<PlannerTask>.from(results[0] as List);
-
-    final resources =
-        List<Resource>.from(results[1] as List);
-
-    final groups =
-        List<ResourceGroup>.from(results[2] as List);
+        List<PlannerTask>.from(baseResults[1] as List);
 
     final assignments =
         List<ResourceAssignment>.from(
-      results[3] as List,
+      baseResults[2] as List,
     );
 
-    final hydratedGroups = await Future.wait(
-      groups.map((group) async {
-        final members =
-            await _groupApi.getMembers(group.id);
+    var resources = <Resource>[];
+    var hydratedGroups = <ResourceGroup>[];
 
-        return ResourceGroup(
-          id: group.id,
-          name: group.name,
-          description: group.description,
-          members: members,
-        );
-      }),
-    );
+    if (access.canReadResourceCatalog) {
+      final catalogResults =
+          await Future.wait<dynamic>([
+        _resourceApi.getResources(),
+        _groupApi.getGroups(),
+      ]);
+
+      resources =
+          List<Resource>.from(catalogResults[0] as List);
+
+      final groups =
+          List<ResourceGroup>.from(
+        catalogResults[1] as List,
+      );
+
+      hydratedGroups = await Future.wait(
+        groups.map((group) async {
+          final members =
+              await _groupApi.getMembers(group.id);
+
+          return ResourceGroup(
+            id: group.id,
+            name: group.name,
+            description: group.description,
+            members: members,
+          );
+        }),
+      );
+    }
 
     tasks.sort(
       (a, b) => a.title.toLowerCase().compareTo(
@@ -142,6 +162,7 @@ class _ResourceAssignmentsTabState
     });
 
     return _AssignmentsData(
+      access: access,
       tasks: tasks,
       resources: resources,
       groups: hydratedGroups,
@@ -495,7 +516,8 @@ class _ResourceAssignmentsTabState
         );
 
         final canCreate =
-            data.tasks.isNotEmpty &&
+            data.access.canEditPlanning &&
+                data.tasks.isNotEmpty &&
                 (
                   data.resources.isNotEmpty ||
                   data.groups.any(
@@ -509,11 +531,15 @@ class _ResourceAssignmentsTabState
             _AssignmentsHeader(
               assignmentCount:
                   data.assignments.length,
+              canEdit:
+                  data.access.canEditPlanning,
               canCreate: canCreate,
               onRefresh: _refresh,
               onCreate: () =>
                   _createAssignment(data),
             ),
+            if (!data.access.canEditPlanning)
+              const _ReadOnlyAssignmentsBanner(),
             Expanded(
               child: ListView(
                 padding:
@@ -558,6 +584,8 @@ class _ResourceAssignmentsTabState
                   const SizedBox(height: 14),
                   if (data.assignments.isEmpty)
                     _EmptyAssignmentsState(
+                      canEdit:
+                          data.access.canEditPlanning,
                       canCreate: canCreate,
                       onCreate: () =>
                           _createAssignment(data),
@@ -594,6 +622,8 @@ class _ResourceAssignmentsTabState
                             data.resources,
                             data.groups,
                           ),
+                          canEdit:
+                              data.access.canEditPlanning,
                           onEdit: (assignment) =>
                               _editAssignment(
                             data,
@@ -638,12 +668,14 @@ class _ResourceAssignmentsTabState
 
 class _AssignmentsHeader extends StatelessWidget {
   final int assignmentCount;
+  final bool canEdit;
   final bool canCreate;
   final Future<void> Function() onRefresh;
   final VoidCallback onCreate;
 
   const _AssignmentsHeader({
     required this.assignmentCount,
+    required this.canEdit,
     required this.canCreate,
     required this.onRefresh,
     required this.onCreate,
@@ -701,22 +733,78 @@ class _AssignmentsHeader extends StatelessWidget {
             icon: const Icon(Icons.refresh),
             label: const Text('Rafraîchir'),
           ),
-          const SizedBox(width: 8),
-          Tooltip(
-            message: canCreate
-                ? 'Créer une assignation'
-                : 'Ajoute au moins une tâche et '
-                    'une ressource ou un groupe non vide.',
-            child: FilledButton.icon(
-              onPressed:
-                  canCreate ? onCreate : null,
-              icon: const Icon(Icons.add),
-              label: const Text(
-                'Nouvelle assignation',
+          if (canEdit) ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: canCreate
+                  ? 'Créer une assignation'
+                  : 'Ajoute au moins une tâche et '
+                      'une ressource ou un groupe non vide.',
+              child: FilledButton.icon(
+                onPressed:
+                    canCreate ? onCreate : null,
+                icon: const Icon(Icons.add),
+                label: const Text(
+                  'Nouvelle assignation',
+                ),
               ),
             ),
-          ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _ReadOnlyAssignmentsBanner
+    extends StatelessWidget {
+  const _ReadOnlyAssignmentsBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        16,
+        0,
+        16,
+        8,
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        decoration: BoxDecoration(
+          color: Theme.of(context)
+              .colorScheme
+              .secondaryContainer
+              .withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.visibility_outlined,
+              size: 19,
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSecondaryContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Mode lecture seule : vous pouvez consulter '
+                'les assignations, mais pas les modifier.',
+                style: TextStyle(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSecondaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -864,6 +952,7 @@ class _AssignmentsFilters extends StatelessWidget {
 class _TaskAssignmentsCard extends StatelessWidget {
   final String taskName;
   final List<ResourceAssignment> assignments;
+  final bool canEdit;
   final List<Resource> resources;
   final List<ResourceGroup> groups;
   final String Function(
@@ -876,6 +965,7 @@ class _TaskAssignmentsCard extends StatelessWidget {
   const _TaskAssignmentsCard({
     required this.taskName,
     required this.assignments,
+    required this.canEdit,
     required this.resources,
     required this.groups,
     required this.targetLabel,
@@ -952,6 +1042,7 @@ class _TaskAssignmentsCard extends StatelessWidget {
                   const EdgeInsets.only(bottom: 7),
               child: _AssignmentTile(
                 assignment: assignment,
+                canEdit: canEdit,
                 targetName:
                     targetLabel(assignment),
                 estimatedCost:
@@ -980,6 +1071,7 @@ class _TaskAssignmentsCard extends StatelessWidget {
 
 class _AssignmentTile extends StatelessWidget {
   final ResourceAssignment assignment;
+  final bool canEdit;
   final String targetName;
   final double? estimatedCost;
   final int? groupMemberCount;
@@ -988,6 +1080,7 @@ class _AssignmentTile extends StatelessWidget {
 
   const _AssignmentTile({
     required this.assignment,
+    required this.canEdit,
     required this.targetName,
     required this.estimatedCost,
     required this.groupMemberCount,
@@ -1069,27 +1162,31 @@ class _AssignmentTile extends StatelessWidget {
             ],
           ),
         ),
-        trailing: SizedBox(
-          width: 104,
-          child: Row(
-            mainAxisAlignment:
-                MainAxisAlignment.end,
-            children: [
-              IconButton(
-                tooltip: 'Modifier',
-                onPressed: onEdit,
-                icon:
-                    const Icon(Icons.edit_outlined),
-              ),
-              IconButton(
-                tooltip: 'Supprimer',
-                onPressed: onDelete,
-                icon:
-                    const Icon(Icons.delete_outline),
-              ),
-            ],
-          ),
-        ),
+        trailing: canEdit
+            ? SizedBox(
+                width: 104,
+                child: Row(
+                  mainAxisAlignment:
+                      MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      tooltip: 'Modifier',
+                      onPressed: onEdit,
+                      icon: const Icon(
+                        Icons.edit_outlined,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Supprimer',
+                      onPressed: onDelete,
+                      icon: const Icon(
+                        Icons.delete_outline,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : null,
       ),
     );
   }
@@ -1254,10 +1351,12 @@ class _AssignmentsErrorState
 }
 
 class _EmptyAssignmentsState extends StatelessWidget {
+  final bool canEdit;
   final bool canCreate;
   final VoidCallback onCreate;
 
   const _EmptyAssignmentsState({
+    required this.canEdit,
     required this.canCreate,
     required this.onCreate,
   });
@@ -1282,11 +1381,14 @@ class _EmptyAssignmentsState extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              canCreate
-                  ? 'Associe une tâche à une ressource '
-                      'ou à un groupe.'
-                  : 'Ajoute une tâche et au moins '
-                      'une ressource ou un groupe non vide.',
+              !canEdit
+                  ? 'Aucune assignation à afficher. '
+                      'Votre accès à ce projet est en lecture seule.'
+                  : canCreate
+                      ? 'Associe une tâche à une ressource '
+                          'ou à un groupe.'
+                      : 'Ajoute une tâche et au moins '
+                          'une ressource ou un groupe non vide.',
               textAlign: TextAlign.center,
             ),
             if (canCreate) ...[
@@ -1331,12 +1433,14 @@ class _NoAssignmentResult extends StatelessWidget {
 }
 
 class _AssignmentsData {
+  final ProjectAccessModel access;
   final List<PlannerTask> tasks;
   final List<Resource> resources;
   final List<ResourceGroup> groups;
   final List<ResourceAssignment> assignments;
 
   const _AssignmentsData({
+    required this.access,
     required this.tasks,
     required this.resources,
     required this.groups,

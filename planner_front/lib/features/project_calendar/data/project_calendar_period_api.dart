@@ -1,17 +1,13 @@
 import 'package:dio/dio.dart';
 
-import '../../../core/config/app_config.dart';
+import '../../../core/api/api_client.dart';
 import 'project_calendar_period_model.dart';
 
 class ProjectCalendarPeriodApi {
-  final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: AppConfig.apiBaseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    ),
-  );
+  final Dio _dio;
+
+  ProjectCalendarPeriodApi({Dio? dio})
+      : _dio = dio ?? ApiClient.dio;
 
   Future<List<ProjectCalendarPeriodModel>> getByProjectId(
     int projectId,
@@ -83,7 +79,9 @@ class ProjectCalendarPeriodApi {
     }
   }
 
-  Future<void> delete(int periodId) async {
+  Future<void> delete(
+    int periodId,
+  ) async {
     try {
       await _dio.delete(
         '/ProjectCalendarPeriods/$periodId',

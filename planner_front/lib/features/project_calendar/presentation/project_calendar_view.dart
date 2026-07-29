@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../projects/data/project_access_api.dart';
+import '../../projects/data/project_access_model.dart';
 import '../data/project_calendar_api.dart';
 import '../data/project_calendar_exception_api.dart';
 import '../data/project_calendar_exception_model.dart';
@@ -23,6 +25,8 @@ class ProjectCalendarView extends StatefulWidget {
 }
 
 class _ProjectCalendarViewState extends State<ProjectCalendarView> {
+  final ProjectAccessApi _projectAccessApi =
+      ProjectAccessApi();
   final ProjectCalendarApi _calendarApi = ProjectCalendarApi();
   final ProjectCalendarExceptionApi _exceptionApi =
       ProjectCalendarExceptionApi();
@@ -33,6 +37,7 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   final TextEditingController _periodLabelController =
       TextEditingController();
 
+  ProjectAccessModel? _access;
   ProjectCalendarModel? _calendar;
   List<ProjectCalendarPeriodModel> _periods = [];
   List<ProjectCalendarExceptionModel> _exceptions = [];
@@ -49,6 +54,9 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   bool _isSavingException = false;
 
   String? _error;
+
+  bool get _canEdit =>
+      _access?.canEditPlanning == true;
 
   @override
   void initState() {
@@ -72,13 +80,19 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
     }
 
     try {
-      final calendar = await _calendarApi.getByProjectId(widget.projectId);
-      final periods = await _periodApi.getByProjectId(widget.projectId);
-      final exceptions = await _exceptionApi.getByProjectId(widget.projectId);
+      final access = await _projectAccessApi
+          .getProjectAccess(widget.projectId);
+      final calendar = await _calendarApi
+          .getByProjectId(widget.projectId);
+      final periods = await _periodApi
+          .getByProjectId(widget.projectId);
+      final exceptions = await _exceptionApi
+          .getByProjectId(widget.projectId);
 
       if (!mounted) return;
 
       setState(() {
+        _access = access;
         _calendar = calendar;
         _periods = periods;
         _exceptions = exceptions;
@@ -95,6 +109,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   }
 
   Future<void> _saveCalendar() async {
+    if (!_canEdit) return;
+
     final calendar = _calendar;
 
     if (calendar == null) return;
@@ -143,6 +159,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   }
 
   Future<void> _pickPeriodStartDate() async {
+    if (!_canEdit) return;
+
     final now = DateTime.now();
 
     final pickedDate = await showDatePicker(
@@ -171,6 +189,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   }
 
   Future<void> _pickPeriodEndDate() async {
+    if (!_canEdit) return;
+
     final startDate = _selectedPeriodStartDate;
 
     if (startDate == null) {
@@ -203,6 +223,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   }
 
   Future<void> _addPeriod() async {
+    if (!_canEdit) return;
+
     final startDate = _selectedPeriodStartDate;
     final endDate = _selectedPeriodEndDate;
 
@@ -287,6 +309,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   Future<void> _deletePeriod(
     ProjectCalendarPeriodModel period,
   ) async {
+    if (!_canEdit) return;
+
     setState(() {
       _error = null;
     });
@@ -327,6 +351,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   }
 
   Future<void> _pickExceptionDate() async {
+    if (!_canEdit) return;
+
     final now = DateTime.now();
 
     final pickedDate = await showDatePicker(
@@ -348,6 +374,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   }
 
   Future<void> _addException() async {
+    if (!_canEdit) return;
+
     final selectedDate = _selectedExceptionDate;
 
     if (selectedDate == null) {
@@ -418,6 +446,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   Future<void> _deleteException(
     ProjectCalendarExceptionModel exception,
   ) async {
+    if (!_canEdit) return;
+
     setState(() {
       _error = null;
     });
@@ -458,6 +488,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   }
 
   void _updateCalendar(ProjectCalendarModel calendar) {
+    if (!_canEdit) return;
+
     setState(() {
       _calendar = calendar;
     });
@@ -495,6 +527,10 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (!_canEdit) ...[
+                const _ReadOnlyCalendarBanner(),
+                const SizedBox(height: 16),
+              ],
               _buildCalendarCard(context, calendar),
               const SizedBox(height: 16),
               _buildPeriodsCard(context),
@@ -549,80 +585,131 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
             _WorkingDayCheckbox(
               label: 'Lundi',
               value: calendar.workMonday,
-              onChanged: (value) {
-                _updateCalendar(calendar.copyWith(workMonday: value));
-              },
+              onChanged: _canEdit
+                  ? (value) {
+                      _updateCalendar(
+                        calendar.copyWith(
+                          workMonday: value,
+                        ),
+                      );
+                    }
+                  : null,
             ),
             _WorkingDayCheckbox(
               label: 'Mardi',
               value: calendar.workTuesday,
-              onChanged: (value) {
-                _updateCalendar(calendar.copyWith(workTuesday: value));
-              },
+              onChanged: _canEdit
+                  ? (value) {
+                      _updateCalendar(
+                        calendar.copyWith(
+                          workTuesday: value,
+                        ),
+                      );
+                    }
+                  : null,
             ),
             _WorkingDayCheckbox(
               label: 'Mercredi',
               value: calendar.workWednesday,
-              onChanged: (value) {
-                _updateCalendar(calendar.copyWith(workWednesday: value));
-              },
+              onChanged: _canEdit
+                  ? (value) {
+                      _updateCalendar(
+                        calendar.copyWith(
+                          workWednesday: value,
+                        ),
+                      );
+                    }
+                  : null,
             ),
             _WorkingDayCheckbox(
               label: 'Jeudi',
               value: calendar.workThursday,
-              onChanged: (value) {
-                _updateCalendar(calendar.copyWith(workThursday: value));
-              },
+              onChanged: _canEdit
+                  ? (value) {
+                      _updateCalendar(
+                        calendar.copyWith(
+                          workThursday: value,
+                        ),
+                      );
+                    }
+                  : null,
             ),
             _WorkingDayCheckbox(
               label: 'Vendredi',
               value: calendar.workFriday,
-              onChanged: (value) {
-                _updateCalendar(calendar.copyWith(workFriday: value));
-              },
+              onChanged: _canEdit
+                  ? (value) {
+                      _updateCalendar(
+                        calendar.copyWith(
+                          workFriday: value,
+                        ),
+                      );
+                    }
+                  : null,
             ),
             _WorkingDayCheckbox(
               label: 'Samedi',
               value: calendar.workSaturday,
-              onChanged: (value) {
-                _updateCalendar(calendar.copyWith(workSaturday: value));
-              },
+              onChanged: _canEdit
+                  ? (value) {
+                      _updateCalendar(
+                        calendar.copyWith(
+                          workSaturday: value,
+                        ),
+                      );
+                    }
+                  : null,
             ),
             _WorkingDayCheckbox(
               label: 'Dimanche',
               value: calendar.workSunday,
-              onChanged: (value) {
-                _updateCalendar(calendar.copyWith(workSunday: value));
-              },
+              onChanged: _canEdit
+                  ? (value) {
+                      _updateCalendar(
+                        calendar.copyWith(
+                          workSunday: value,
+                        ),
+                      );
+                    }
+                  : null,
             ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                FilledButton.icon(
-                  onPressed: _isSavingCalendar ? null : _saveCalendar,
-                  icon: _isSavingCalendar
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.save),
-                  label: Text(
-                    _isSavingCalendar
-                        ? 'Enregistrement...'
-                        : 'Enregistrer et recalculer',
+            if (_canEdit) ...[
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  FilledButton.icon(
+                    onPressed: _isSavingCalendar
+                        ? null
+                        : _saveCalendar,
+                    icon: _isSavingCalendar
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child:
+                                CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.save),
+                    label: Text(
+                      _isSavingCalendar
+                          ? 'Enregistrement...'
+                          : 'Enregistrer et recalculer',
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                OutlinedButton.icon(
-                  onPressed: _isSavingCalendar ? null : _loadAll,
-                  icon: const Icon(Icons.undo),
-                  label: const Text('Annuler les changements'),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: _isSavingCalendar
+                        ? null
+                        : _loadAll,
+                    icon: const Icon(Icons.undo),
+                    label: const Text(
+                      'Annuler les changements',
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -655,6 +742,7 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
+            if (_canEdit) ...[
             Wrap(
               spacing: 12,
               runSpacing: 12,
@@ -714,7 +802,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
+            ],
             if (_periods.isEmpty)
               Text(
                 'Aucune période non ouvrée pour ce projet.',
@@ -738,11 +827,16 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
                       '${dateFormatter.format(period.startDate)} → '
                       '${dateFormatter.format(period.endDate)}',
                     ),
-                    trailing: IconButton(
-                      tooltip: 'Supprimer',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _deletePeriod(period),
-                    ),
+                    trailing: _canEdit
+                        ? IconButton(
+                            tooltip: 'Supprimer',
+                            icon: const Icon(
+                              Icons.delete_outline,
+                            ),
+                            onPressed: () =>
+                                _deletePeriod(period),
+                          )
+                        : null,
                   );
                 }).toList(),
               ),
@@ -779,6 +873,7 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
+            if (_canEdit) ...[
             Wrap(
               spacing: 12,
               runSpacing: 12,
@@ -842,7 +937,8 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
+            ],
             if (_exceptions.isEmpty)
               Text(
                 'Aucune exception calendrier pour ce projet.',
@@ -870,11 +966,16 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
                       '${dateFormatter.format(exception.date)} · '
                       '${exception.isWorkingDay ? 'Jour travaillé' : 'Jour non travaillé'}',
                     ),
-                    trailing: IconButton(
-                      tooltip: 'Supprimer',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _deleteException(exception),
-                    ),
+                    trailing: _canEdit
+                        ? IconButton(
+                            tooltip: 'Supprimer',
+                            icon: const Icon(
+                              Icons.delete_outline,
+                            ),
+                            onPressed: () =>
+                                _deleteException(exception),
+                          )
+                        : null,
                   );
                 }).toList(),
               ),
@@ -885,10 +986,54 @@ class _ProjectCalendarViewState extends State<ProjectCalendarView> {
   }
 }
 
+class _ReadOnlyCalendarBanner
+    extends StatelessWidget {
+  const _ReadOnlyCalendarBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 12,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .secondaryContainer
+            .withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.visibility_outlined,
+            color: Theme.of(context)
+                .colorScheme
+                .onSecondaryContainer,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Mode lecture seule : vous pouvez consulter '
+              'les jours ouvrés, périodes et exceptions.',
+              style: TextStyle(
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSecondaryContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _WorkingDayCheckbox extends StatelessWidget {
   final String label;
   final bool value;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool>? onChanged;
 
   const _WorkingDayCheckbox({
     required this.label,
@@ -903,10 +1048,12 @@ class _WorkingDayCheckbox extends StatelessWidget {
       title: Text(label),
       subtitle: Text(value ? 'Jour ouvré' : 'Jour non ouvré'),
       value: value,
-      onChanged: (newValue) {
-        if (newValue == null) return;
-        onChanged(newValue);
-      },
+      onChanged: onChanged == null
+          ? null
+          : (newValue) {
+              if (newValue == null) return;
+              onChanged!(newValue);
+            },
     );
   }
 }

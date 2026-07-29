@@ -1,19 +1,17 @@
 import 'package:dio/dio.dart';
 
-import '../../../core/config/app_config.dart';
+import '../../../core/api/api_client.dart';
 import 'project_calendar_model.dart';
 
 class ProjectCalendarApi {
-  final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: AppConfig.apiBaseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    ),
-  );
+  final Dio _dio;
 
-  Future<ProjectCalendarModel> getByProjectId(int projectId) async {
+  ProjectCalendarApi({Dio? dio})
+      : _dio = dio ?? ApiClient.dio;
+
+  Future<ProjectCalendarModel> getByProjectId(
+    int projectId,
+  ) async {
     try {
       final response = await _dio.get(
         '/ProjectCalendars/project/$projectId',
@@ -25,7 +23,8 @@ class ProjectCalendarApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur chargement calendrier projet : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }
@@ -46,7 +45,8 @@ class ProjectCalendarApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur mise à jour calendrier projet : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }

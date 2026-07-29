@@ -1,19 +1,17 @@
 import 'package:dio/dio.dart';
 
-import '../../../core/config/app_config.dart';
+import '../../../core/api/api_client.dart';
 import 'project_baseline_model.dart';
 
 class ProjectBaselineApi {
-  final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: AppConfig.apiBaseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    ),
-  );
+  final Dio _dio;
 
-  Future<List<ProjectBaselineModel>> getByProjectId(int projectId) async {
+  ProjectBaselineApi({Dio? dio})
+      : _dio = dio ?? ApiClient.dio;
+
+  Future<List<ProjectBaselineModel>> getByProjectId(
+    int projectId,
+  ) async {
     try {
       final response = await _dio.get(
         '/ProjectBaselines/project/$projectId',
@@ -31,7 +29,8 @@ class ProjectBaselineApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur chargement baselines : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }
@@ -58,12 +57,15 @@ class ProjectBaselineApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur création baseline : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }
 
-  Future<ProjectBaselineDetailModel> getById(int baselineId) async {
+  Future<ProjectBaselineDetailModel> getById(
+    int baselineId,
+  ) async {
     try {
       final response = await _dio.get(
         '/ProjectBaselines/$baselineId',
@@ -75,12 +77,15 @@ class ProjectBaselineApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur détail baseline : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }
 
-  Future<ProjectBaselineComparisonModel> compare(int baselineId) async {
+  Future<ProjectBaselineComparisonModel> compare(
+    int baselineId,
+  ) async {
     try {
       final response = await _dio.get(
         '/ProjectBaselines/$baselineId/comparison',
@@ -92,12 +97,15 @@ class ProjectBaselineApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur comparaison baseline : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }
 
-  Future<ProjectBaselineModel> setActive(int baselineId) async {
+  Future<ProjectBaselineModel> setActive(
+    int baselineId,
+  ) async {
     try {
       final response = await _dio.put(
         '/ProjectBaselines/$baselineId/set-active',
@@ -109,12 +117,15 @@ class ProjectBaselineApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur activation baseline : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }
 
-  Future<void> delete(int baselineId) async {
+  Future<void> delete(
+    int baselineId,
+  ) async {
     try {
       await _dio.delete(
         '/ProjectBaselines/$baselineId',
@@ -122,7 +133,8 @@ class ProjectBaselineApi {
     } on DioException catch (error) {
       throw Exception(
         'Erreur suppression baseline : '
-        '${error.response?.statusCode} - ${error.response?.data ?? error.message}',
+        '${error.response?.statusCode} - '
+        '${error.response?.data ?? error.message}',
       );
     }
   }

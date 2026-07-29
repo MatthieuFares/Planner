@@ -2,18 +2,13 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
-import '../../../core/config/app_config.dart';
+import '../../../core/api/api_client.dart';
 
 class ProjectInteropApi {
   final Dio _dio;
 
   ProjectInteropApi({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: AppConfig.apiBaseUrl,
-              ),
-            );
+      : _dio = dio ?? ApiClient.dio;
 
   Future<ProjectImportPreview> previewImport(
     ProjectImportFile file,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../projects/data/project_access_api.dart';
+import '../../projects/data/project_access_model.dart';
 import '../data/resource_analysis_api.dart';
 import '../data/resource_analysis_model.dart';
 import '../data/resource_api.dart';
@@ -22,15 +24,34 @@ class ResourcesTab extends StatefulWidget {
 }
 
 class _ResourcesTabState extends State<ResourcesTab> {
-  final ResourceApi _resourceApi = ResourceApi();
-  final ResourceAnalysisApi _resourceAnalysisApi = ResourceAnalysisApi();
+  final ProjectAccessApi _projectAccessApi =
+      ProjectAccessApi();
 
-  late Future<_ResourcesData> _resourcesFuture;
+  final ResourceApi _resourceApi = ResourceApi();
+  final ResourceAnalysisApi _resourceAnalysisApi =
+      ResourceAnalysisApi();
+
+  late Future<ProjectAccessModel> _accessFuture;
+  Future<_ResourcesData>? _resourcesFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadResources();
+    _loadAccess();
+  }
+
+  void _loadAccess() {
+    _resourcesFuture = null;
+
+    _accessFuture = _projectAccessApi
+        .getProjectAccess(widget.projectId)
+        .then((access) {
+      if (access.canReadResourceCatalog) {
+        _resourcesFuture = _fetchResourcesData();
+      }
+
+      return access;
+    });
   }
 
   void _loadResources() {
@@ -274,43 +295,106 @@ class _ResourcesTabState extends State<ResourcesTab> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Column(
-        children: [
-          const TabBar(
-            tabs: [
-              Tab(
-                icon: Icon(Icons.assignment_ind_outlined),
-                text: 'Assignations',
-              ),
+    return FutureBuilder<ProjectAccessModel>(
+      future: _accessFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState ==
+            ConnectionState.waiting) {
+          return const LinearProgressIndicator();
+        }
+
+        if (snapshot.hasError) {
+          return _ProjectAccessErrorState(
+            error: snapshot.error,
+            onRetry: () {
+              setState(() {
+                _loadAccess();
+              });
+            },
+          );
+        }
+
+        final access = snapshot.data;
+
+        if (access == null ||
+            !access.canReadProject) {
+          return const Center(
+            child: Text(
+              'Accès au projet indisponible.',
+            ),
+          );
+        }
+
+        final tabs = <Tab>[
+          const Tab(
+            icon: Icon(
+              Icons.assignment_ind_outlined,
+            ),
+            text: 'Assignations',
+          ),
+        ];
+
+        final views = <Widget>[
+          ResourceAssignmentsTab(
+            projectId: widget.projectId,
+          ),
+        ];
+
+        if (access.canReadResourceCatalog) {
+          tabs.addAll(
+            const [
               Tab(
                 icon: Icon(Icons.groups_outlined),
                 text: 'Ressources',
               ),
               Tab(
-                icon: Icon(Icons.group_work_outlined),
+                icon: Icon(
+                  Icons.group_work_outlined,
+                ),
                 text: 'Groupes',
               ),
             ],
+          );
+
+          views.addAll(
+            [
+              _buildResourcesList(access),
+              const ResourceGroupsTab(),
+            ],
+          );
+        }
+
+        return DefaultTabController(
+          length: tabs.length,
+          child: Column(
+            children: [
+              TabBar(tabs: tabs),
+              Expanded(
+                child: TabBarView(
+                  children: views,
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                ResourceAssignmentsTab(projectId: widget.projectId),
-                _buildResourcesList(),
-                const ResourceGroupsTab(),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildResourcesList() {
+
+  Widget _buildResourcesList(
+    ProjectAccessModel access,
+  ) {
+    final resourcesFuture = _resourcesFuture;
+
+    if (resourcesFuture == null) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
     return FutureBuilder<_ResourcesData>(
-      future: _resourcesFuture,
+      future: resourcesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LinearProgressIndicator();
@@ -353,12 +437,16 @@ class _ResourcesTabState extends State<ResourcesTab> {
                     icon: const Icon(Icons.refresh),
                     label: const Text('Rafraîchir'),
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: _createResource,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Nouvelle ressource'),
-                  ),
+                  if (access.canManageResourceCatalog) ...[
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _createResource,
+                      icon: const Icon(Icons.add),
+                      label: const Text(
+                        'Nouvelle ressource',
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -413,24 +501,44 @@ class _ResourcesTabState extends State<ResourcesTab> {
                               'Capacité : ${resource.capacityHoursPerWeek}h/semaine | '
                               'Coût : ${_formatMoney(resource.costPerHour)}€/h',
                             ),
-                            trailing: SizedBox(
-                              width: 104,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  IconButton(
-                                    tooltip: 'Modifier',
-                                    onPressed: () => _editResource(resource),
-                                    icon: const Icon(Icons.edit_outlined),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Supprimer',
-                                    onPressed: () => _deleteResource(resource),
-                                    icon: const Icon(Icons.delete_outline),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            trailing:
+                                access.canManageResourceCatalog
+                                    ? SizedBox(
+                                        width: 104,
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
+                                          children: [
+                                            IconButton(
+                                              tooltip: 'Modifier',
+                                              onPressed: () =>
+                                                  _editResource(
+                                                resource,
+                                              ),
+                                              icon: const Icon(
+                                                Icons.edit_outlined,
+                                              ),
+                                            ),
+                                            IconButton(
+                                              tooltip: 'Supprimer',
+                                              onPressed: () =>
+                                                  _deleteResource(
+                                                resource,
+                                              ),
+                                              icon: const Icon(
+                                                Icons.delete_outline,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : const Tooltip(
+                                        message:
+                                            'Catalogue en lecture seule',
+                                        child: Icon(
+                                          Icons.visibility_outlined,
+                                        ),
+                                      ),
                           ),
                         ),
                       );
@@ -441,6 +549,62 @@ class _ResourcesTabState extends State<ResourcesTab> {
           ],
         );
       },
+    );
+  }
+}
+
+class _ProjectAccessErrorState
+    extends StatelessWidget {
+  final Object? error;
+  final VoidCallback onRetry;
+
+  const _ProjectAccessErrorState({
+    required this.error,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Card(
+        margin: const EdgeInsets.all(24),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.lock_outline,
+                size: 42,
+                color: Theme.of(context)
+                    .colorScheme
+                    .error,
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Impossible de déterminer vos droits '
+                'sur ce projet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                error?.toString() ??
+                    'Erreur inconnue',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Réessayer'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

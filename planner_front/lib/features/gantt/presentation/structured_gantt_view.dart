@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../projects/data/project_access_api.dart';
+import '../../projects/data/project_access_model.dart';
 import '../data/structured_gantt_api.dart';
 import '../data/structured_gantt_model.dart';
 import '../export/gantt_export_controller.dart';
@@ -249,6 +251,7 @@ bool _isWorkingDayForProject({
 }
 
 class _StructuredGanttLoadedData {
+  final ProjectAccessModel access;
   final StructuredGanttResponse gantt;
   final ProjectCalendarModel calendar;
   final List<ProjectCalendarExceptionModel> exceptions;
@@ -258,6 +261,7 @@ class _StructuredGanttLoadedData {
   final int? selectedBaselineId;
 
   const _StructuredGanttLoadedData({
+    required this.access,
     required this.gantt,
     required this.calendar,
     required this.exceptions,
@@ -304,6 +308,8 @@ class StructuredGanttView extends StatefulWidget {
 }
 
 class _StructuredGanttViewState extends State<StructuredGanttView> {
+  final ProjectAccessApi _projectAccessApi =
+      ProjectAccessApi();
   final StructuredGanttApi _ganttApi = StructuredGanttApi();
   final GanttExportController _ganttExportController =
       GanttExportController();
@@ -324,7 +330,9 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   double _dayWidth = 24;
   int? _selectedBaselineId;
   bool _showBaselineBars = true;
-  StructuredGanttDisplayMode _displayMode = StructuredGanttDisplayMode.auto;
+  StructuredGanttDisplayMode _displayMode =
+      StructuredGanttDisplayMode.auto;
+  bool _canEditPlanning = false;
 
   @override
   void initState() {
@@ -337,6 +345,11 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   }
 
   Future<_StructuredGanttLoadedData> _loadGanttData() async {
+    final access = await _projectAccessApi
+        .getProjectAccess(widget.projectId);
+
+    _canEditPlanning = access.canEditPlanning;
+
     final gantt = await _ganttApi.getStructuredGantt(
       widget.projectId,
     );
@@ -399,6 +412,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     _selectedBaselineId = resolvedBaselineId;
 
     return _StructuredGanttLoadedData(
+      access: access,
       gantt: gantt,
       calendar: calendar,
       exceptions: exceptions,
@@ -566,6 +580,8 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   }
 
   Future<void> _syncTasks() async {
+    if (!_canEditPlanning) return;
+
     try {
       await _ganttApi.syncProjectTasks(widget.projectId);
 
@@ -594,6 +610,8 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   Future<void> _createTaskUnderParent({
     required int parentId,
   }) async {
+    if (!_canEditPlanning) return;
+
     final result = await showDialog<TaskFormResult>(
       context: context,
       builder: (dialogContext) {
@@ -684,6 +702,8 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   Future<void> _editTaskFromGantt(
     StructuredGanttItem item,
   ) async {
+    if (!_canEditPlanning) return;
+
     final task = item.task;
 
     if (task == null) return;
@@ -817,7 +837,11 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     }
   }
 
-  Future<void> _deleteTaskFromGantt(StructuredGanttItem item) async {
+  Future<void> _deleteTaskFromGantt(
+    StructuredGanttItem item,
+  ) async {
+    if (!_canEditPlanning) return;
+
     final task = item.task;
 
     if (task == null) return;
@@ -877,6 +901,8 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
   Future<void> _createPlanningItem(
     List<StructuredGanttItem> items,
   ) async {
+    if (!_canEditPlanning) return;
+
     const rootValue = -1;
 
     final nameController = TextEditingController();
@@ -1157,6 +1183,8 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     required StructuredGanttItem item,
     required List<StructuredGanttItem> possibleParents,
   }) async {
+    if (!_canEditPlanning) return;
+
     const rootValue = -1;
 
     final canMoveToRoot =
@@ -1350,6 +1378,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
         final data = loadedData.gantt;
 
         return _StructuredGanttChart(
+          canEdit: loadedData.access.canEditPlanning,
           data: data,
           calendar: loadedData.calendar,
           exceptions: loadedData.exceptions,
@@ -1384,6 +1413,7 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
 }
 
 class _StructuredGanttChart extends StatefulWidget {
+  final bool canEdit;
   final StructuredGanttResponse data;
   final ProjectCalendarModel calendar;
   final List<ProjectCalendarExceptionModel> exceptions;
@@ -1411,6 +1441,7 @@ class _StructuredGanttChart extends StatefulWidget {
   final VoidCallback onZoomOut;
 
   const _StructuredGanttChart({
+    required this.canEdit,
     required this.data,
     required this.calendar,
     required this.exceptions,
@@ -2223,20 +2254,25 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                       : 'Exporter PDF',
                 ),
               ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: () => widget.onCreateItem(items),
-                icon: const Icon(Icons.add),
-                label: const Text('Ajouter'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () {
-                  widget.onSyncTasks();
-                },
-                icon: const Icon(Icons.sync),
-                label: const Text('Synchroniser'),
-              ),
+              if (widget.canEdit) ...[
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: () =>
+                      widget.onCreateItem(items),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Ajouter'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    widget.onSyncTasks();
+                  },
+                  icon: const Icon(Icons.sync),
+                  label: const Text(
+                    'Synchroniser',
+                  ),
+                ),
+              ],
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: widget.onRefresh,
@@ -2246,6 +2282,16 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
             ],
           ),
         ),
+        if (!widget.canEdit)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              8,
+            ),
+            child: _ReadOnlyGanttBanner(),
+          ),
         if (widget.baselineComparison != null &&
             widget.showBaselineBars)
           Padding(
@@ -2397,17 +2443,20 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                                 ),
                               ),
                             ),
-                          const SizedBox(
-                            width: 100,
-                            child: Text(
-                              'Actions',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
+                          if (widget.canEdit)
+                            const SizedBox(
+                              width: 100,
+                              child: Text(
+                                'Actions',
+                                textAlign:
+                                    TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight:
+                                      FontWeight.bold,
+                                  fontSize: 11,
+                                ),
                               ),
                             ),
-                          ),
                         ],
                       ),
                     ),
@@ -2430,6 +2479,7 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
                                 final item = items[index];
 
                                 return _StructuredGanttLeftRow(
+                                  canEdit: widget.canEdit,
                                   item: item,
                                   compactPanel: _isTaskPanelCompact,
                                   showStartColumn: _showStartColumn,
@@ -2541,6 +2591,51 @@ class _StructuredGanttChartState extends State<_StructuredGanttChart> {
   }
 }
 
+class _ReadOnlyGanttBanner
+    extends StatelessWidget {
+  const _ReadOnlyGanttBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 10,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .secondaryContainer
+            .withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.visibility_outlined,
+            color: Theme.of(context)
+                .colorScheme
+                .onSecondaryContainer,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Mode lecture seule : navigation, zoom, '
+              'baselines et export restent disponibles.',
+              style: TextStyle(
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSecondaryContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StructuredGanttEmptyBarArea extends StatelessWidget {
   final DateTime visibleStart;
   final int totalDays;
@@ -2635,6 +2730,7 @@ class _StructuredGanttEmptyBarArea extends StatelessWidget {
 }
 
 class _StructuredGanttLeftRow extends StatelessWidget {
+  final bool canEdit;
   final StructuredGanttItem item;
   final bool compactPanel;
   final bool showStartColumn;
@@ -2651,6 +2747,7 @@ class _StructuredGanttLeftRow extends StatelessWidget {
   final Future<void> Function(StructuredGanttItem item) onDeleteTask;
 
   const _StructuredGanttLeftRow({
+    required this.canEdit,
     required this.item,
     required this.compactPanel,
     required this.showStartColumn,
@@ -2930,6 +3027,7 @@ class _StructuredGanttLeftRow extends StatelessWidget {
                     task?.isLate == true ? FontWeight.bold : FontWeight.normal,
               ),
             ),
+          if (canEdit)
           SizedBox(
             width: 100,
             child: item.type == 'Task'

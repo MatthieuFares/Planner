@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../auth/data/auth_session.dart';
 import '../data/project_api.dart';
 import '../data/project_interop_api.dart';
 import '../data/project_model.dart';
@@ -517,6 +518,40 @@ class _ProjectsPageState extends State<ProjectsPage> {
     );
   }
 
+
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Se déconnecter'),
+          content: const Text(
+            'Voulez-vous fermer votre session Planner ?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton.icon(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.logout),
+              label: const Text('Se déconnecter'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    await AuthSession.instance.logout();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -554,6 +589,14 @@ class _ProjectsPageState extends State<ProjectsPage> {
             onPressed: _refreshProjects,
             icon: const Icon(Icons.refresh),
           ),
+          IconButton(
+            tooltip: AuthSession.instance.email == null
+                ? 'Déconnexion'
+                : 'Déconnexion (${AuthSession.instance.email})',
+            onPressed: _logout,
+            icon: const Icon(Icons.logout),
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

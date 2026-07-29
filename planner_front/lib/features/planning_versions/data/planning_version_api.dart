@@ -1,17 +1,13 @@
 import 'package:dio/dio.dart';
 
-import '../../../core/config/app_config.dart';
+import '../../../core/api/api_client.dart';
 import 'planning_version_model.dart';
 
 class PlanningVersionApi {
-  final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: AppConfig.apiBaseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    ),
-  );
+  final Dio _dio;
+
+  PlanningVersionApi({Dio? dio})
+      : _dio = dio ?? ApiClient.dio;
 
   Future<List<PlanningVersionSummaryModel>> getByProjectId(
     int projectId,
@@ -165,7 +161,8 @@ class PlanningVersionApi {
   ) {
     final statusCode = error.response?.statusCode;
     final responseData = error.response?.data;
-    final detail = responseData ?? error.message ?? 'Erreur inconnue';
+    final detail =
+        responseData ?? error.message ?? 'Erreur inconnue';
 
     if (statusCode == null) {
       return '$prefix : $detail';

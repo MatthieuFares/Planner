@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../projects/data/project_access_api.dart';
+import '../../projects/data/project_access_model.dart';
 import '../data/project_baseline_api.dart';
 import '../data/project_baseline_model.dart';
 
@@ -17,8 +19,11 @@ class ProjectBaselineView extends StatefulWidget {
 }
 
 class _ProjectBaselineViewState extends State<ProjectBaselineView> {
+  final ProjectAccessApi _projectAccessApi =
+      ProjectAccessApi();
   final ProjectBaselineApi _api = ProjectBaselineApi();
 
+  ProjectAccessModel? _access;
   List<ProjectBaselineModel> _baselines = [];
   ProjectBaselineComparisonModel? _comparison;
   int? _selectedBaselineId;
@@ -28,7 +33,11 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
   bool _isComparing = false;
   String? _error;
 
-  final DateFormat _dateFormatter = DateFormat('dd/MM/yyyy');
+  final DateFormat _dateFormatter =
+      DateFormat('dd/MM/yyyy');
+
+  bool get _canEdit =>
+      _access?.canEditPlanning == true;
 
   @override
   void initState() {
@@ -43,6 +52,9 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     });
 
     try {
+      final access = await _projectAccessApi
+          .getProjectAccess(widget.projectId);
+
       final baselines = await _api.getByProjectId(
         widget.projectId,
       );
@@ -76,6 +88,7 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
       if (!mounted) return;
 
       setState(() {
+        _access = access;
         _baselines = baselines;
         _selectedBaselineId = selectedBaselineId;
         _comparison = comparison;
@@ -92,6 +105,8 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
   }
 
   Future<void> _showCreateBaselineDialog() async {
+    if (!_canEdit) return;
+
     final nameController = TextEditingController(
       text: 'Baseline ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
     );
@@ -186,6 +201,8 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     String? description,
     required bool setAsActive,
   }) async {
+    if (!_canEdit) return;
+
     setState(() {
       _isCreating = true;
       _error = null;
@@ -231,6 +248,8 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
   }
 
   Future<void> _setActive(ProjectBaselineModel baseline) async {
+    if (!_canEdit) return;
+
     setState(() {
       _error = null;
     });
@@ -264,6 +283,8 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
   }
 
   Future<void> _deleteBaseline(ProjectBaselineModel baseline) async {
+    if (!_canEdit) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -389,6 +410,10 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildHeader(context),
+              if (!_canEdit) ...[
+                const SizedBox(height: 12),
+                const _ReadOnlyBaselineBanner(),
+              ],
               const SizedBox(height: 16),
               if (_error != null) _buildErrorCard(),
               _buildBaselinesCard(context),
@@ -416,18 +441,29 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
           icon: const Icon(Icons.refresh),
           label: const Text('Rafraîchir'),
         ),
-        const SizedBox(width: 8),
-        FilledButton.icon(
-          onPressed: _isCreating ? null : _showCreateBaselineDialog,
-          icon: _isCreating
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.add),
-          label: Text(_isCreating ? 'Création...' : 'Créer baseline'),
-        ),
+        if (_canEdit) ...[
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: _isCreating
+                ? null
+                : _showCreateBaselineDialog,
+            icon: _isCreating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child:
+                        CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(Icons.add),
+            label: Text(
+              _isCreating
+                  ? 'Création...'
+                  : 'Créer baseline',
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -452,13 +488,22 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              const Text('Aucune baseline créée pour ce projet.'),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: _showCreateBaselineDialog,
-                icon: const Icon(Icons.add),
-                label: const Text('Créer la première baseline'),
+              Text(
+                _canEdit
+                    ? 'Aucune baseline créée pour ce projet.'
+                    : 'Aucune baseline disponible pour ce projet.',
               ),
+              if (_canEdit) ...[
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed:
+                      _showCreateBaselineDialog,
+                  icon: const Icon(Icons.add),
+                  label: const Text(
+                    'Créer la première baseline',
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -523,27 +568,38 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
                   OutlinedButton.icon(
                     onPressed: _isComparing
                         ? null
-                        : () => _compareBaseline(baseline),
+                        : () =>
+                            _compareBaseline(baseline),
                     icon: Icon(
                       isSelected
                           ? Icons.check_circle
                           : Icons.compare_arrows,
                     ),
                     label: Text(
-                      isSelected ? 'Sélectionnée' : 'Comparer',
+                      isSelected
+                          ? 'Sélectionnée'
+                          : 'Comparer',
                     ),
                   ),
-                  if (!baseline.isActive)
+                  if (_canEdit &&
+                      !baseline.isActive)
                     OutlinedButton.icon(
-                      onPressed: () => _setActive(baseline),
-                      icon: const Icon(Icons.check_circle_outline),
+                      onPressed: () =>
+                          _setActive(baseline),
+                      icon: const Icon(
+                        Icons.check_circle_outline,
+                      ),
                       label: const Text('Activer'),
                     ),
-                  IconButton(
-                    tooltip: 'Supprimer',
-                    onPressed: () => _deleteBaseline(baseline),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
+                  if (_canEdit)
+                    IconButton(
+                      tooltip: 'Supprimer',
+                      onPressed: () =>
+                          _deleteBaseline(baseline),
+                      icon: const Icon(
+                        Icons.delete_outline,
+                      ),
+                    ),
                 ],
               ),
             );
@@ -1083,6 +1139,50 @@ class _ProjectBaselineViewState extends State<ProjectBaselineView> {
     return const Chip(
       label: Text('OK'),
       visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+class _ReadOnlyBaselineBanner
+    extends StatelessWidget {
+  const _ReadOnlyBaselineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 12,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .secondaryContainer
+            .withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.visibility_outlined,
+            color: Theme.of(context)
+                .colorScheme
+                .onSecondaryContainer,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Mode lecture seule : vous pouvez consulter '
+              'et comparer les baselines existantes.',
+              style: TextStyle(
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSecondaryContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

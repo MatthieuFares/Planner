@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'features/projects/presentation/projects_page.dart';
+import 'features/auth/presentation/auth_gate.dart';
 
 class PlannerApp extends StatelessWidget {
   const PlannerApp({super.key});
@@ -14,7 +14,7 @@ class PlannerApp extends StatelessWidget {
         colorSchemeSeed: Colors.blue,
         useMaterial3: true,
       ),
-      home: const ProjectsPage(),
+      home: const AuthGate(),
     );
   }
 }

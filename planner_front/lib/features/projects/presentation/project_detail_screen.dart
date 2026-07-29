@@ -7,6 +7,8 @@ import '../../project_baseline/presentation/project_baseline_view.dart';
 import '../../project_calendar/presentation/project_calendar_view.dart';
 import '../../planning_versions/presentation/planning_versions_view.dart';
 import '../../resources/presentation/resources_tab.dart';
+import '../data/project_access_api.dart';
+import '../data/project_access_model.dart';
 import '../data/project_api.dart';
 import '../data/project_insights_api.dart';
 import '../data/project_interop_api.dart';
@@ -27,6 +29,15 @@ enum _DashboardViewMode {
   compact,
 }
 
+enum _ProjectTab {
+  dashboard,
+  resources,
+  calendar,
+  baselines,
+  versions,
+  gantt,
+}
+
 class ProjectDetailScreen extends StatefulWidget {
   final int projectId;
   final String? initialProjectName;
@@ -44,6 +55,8 @@ class ProjectDetailScreen extends StatefulWidget {
 
 class _ProjectDetailScreenState
     extends State<ProjectDetailScreen> {
+  final ProjectAccessApi _projectAccessApi =
+      ProjectAccessApi();
   final ProjectApi _projectApi = ProjectApi();
   final ProjectInsightsApi _insightsApi =
       ProjectInsightsApi();
@@ -52,9 +65,12 @@ class _ProjectDetailScreenState
   final DashboardExportController _dashboardExportController =
       DashboardExportController();
 
-  int _selectedTabIndex = 0;
+  _ProjectTab _selectedTab =
+      _ProjectTab.dashboard;
   bool _isExportingProjectXml = false;
 
+  late Future<ProjectAccessModel>
+      _projectAccessFuture;
   late Future<Project?> _projectFuture;
   late Future<_ProjectInsightsData> _insightsFuture;
 
@@ -78,8 +94,16 @@ class _ProjectDetailScreenState
   @override
   void initState() {
     super.initState();
+    _loadProjectAccess();
     _loadProject();
     _loadInsights();
+  }
+
+  void _loadProjectAccess() {
+    _projectAccessFuture =
+        _projectAccessApi.getProjectAccess(
+      widget.projectId,
+    );
   }
 
   void _loadProject() {
@@ -112,6 +136,7 @@ class _ProjectDetailScreenState
 
   Future<void> _refreshAll() async {
     setState(() {
+      _loadProjectAccess();
       _loadProject();
       _loadInsights();
     });
@@ -277,82 +302,225 @@ class _ProjectDetailScreenState
   void _navigateFromWarning(
     WarningsNavigationTarget target,
   ) {
-    final tabIndex = switch (target) {
-      WarningsNavigationTarget.tasks => 5,
-      WarningsNavigationTarget.dependencies => 5,
-      WarningsNavigationTarget.resources => 1,
-      WarningsNavigationTarget.calendar => 2,
-      WarningsNavigationTarget.gantt => 5,
+    final destination = switch (target) {
+      WarningsNavigationTarget.tasks =>
+        _ProjectTab.gantt,
+      WarningsNavigationTarget.dependencies =>
+        _ProjectTab.gantt,
+      WarningsNavigationTarget.resources =>
+        _ProjectTab.resources,
+      WarningsNavigationTarget.calendar =>
+        _ProjectTab.calendar,
+      WarningsNavigationTarget.gantt =>
+        _ProjectTab.gantt,
     };
 
     setState(() {
-      _selectedTabIndex = tabIndex;
+      _selectedTab = destination;
     });
   }
 
-  Widget _buildSelectedTab() {
-    switch (_selectedTabIndex) {
-      case 0:
+  List<_ProjectTab> _availableTabs(
+    ProjectAccessModel access,
+  ) {
+    return <_ProjectTab>[
+      _ProjectTab.dashboard,
+      _ProjectTab.resources,
+      _ProjectTab.calendar,
+      _ProjectTab.baselines,
+      if (access.canEditPlanning)
+        _ProjectTab.versions,
+      _ProjectTab.gantt,
+    ];
+  }
+
+  NavigationDestination _destinationForTab(
+    _ProjectTab tab,
+  ) {
+    return switch (tab) {
+      _ProjectTab.dashboard =>
+        const NavigationDestination(
+          icon: Icon(
+            Icons.dashboard_outlined,
+          ),
+          label: 'Dashboard',
+        ),
+      _ProjectTab.resources =>
+        const NavigationDestination(
+          icon: Icon(
+            Icons.groups_outlined,
+          ),
+          label: 'Ressources',
+        ),
+      _ProjectTab.calendar =>
+        const NavigationDestination(
+          icon: Icon(
+            Icons.calendar_month_outlined,
+          ),
+          selectedIcon: Icon(
+            Icons.calendar_month,
+          ),
+          label: 'Calendrier',
+        ),
+      _ProjectTab.baselines =>
+        const NavigationDestination(
+          icon: Icon(
+            Icons.camera_alt_outlined,
+          ),
+          selectedIcon: Icon(
+            Icons.camera_alt,
+          ),
+          label: 'Baselines',
+        ),
+      _ProjectTab.versions =>
+        const NavigationDestination(
+          icon: Icon(
+            Icons.history_outlined,
+          ),
+          selectedIcon: Icon(
+            Icons.history,
+          ),
+          label: 'Versions',
+        ),
+      _ProjectTab.gantt =>
+        const NavigationDestination(
+          icon: Icon(
+            Icons.timeline,
+          ),
+          label: 'Gantt',
+        ),
+    };
+  }
+
+  Widget _buildSelectedTab(
+    _ProjectTab selectedTab,
+  ) {
+    switch (selectedTab) {
+      case _ProjectTab.dashboard:
         return _DashboardTab(
           insightsFuture: _insightsFuture,
           order: _dashboardOrder,
-          visibleBlocks: _visibleDashboardBlocks,
+          visibleBlocks:
+              _visibleDashboardBlocks,
           viewMode: _dashboardViewMode,
-          onOrderChanged: _updateDashboardOrder,
+          onOrderChanged:
+              _updateDashboardOrder,
           onVisibilityChanged:
               _updateDashboardVisibility,
           onViewModeChanged:
               _updateDashboardViewMode,
-          onResetLayout: _resetDashboardLayout,
+          onResetLayout:
+              _resetDashboardLayout,
           onExportPdf: _exportDashboardPdf,
           onBuildDefaultFileName:
               _buildDashboardDefaultFileName,
-          onWarningNavigate: _navigateFromWarning,
+          onWarningNavigate:
+              _navigateFromWarning,
         );
 
-      case 1:
+      case _ProjectTab.resources:
         return ResourcesTab(
           projectId: widget.projectId,
         );
 
-      case 2:
+      case _ProjectTab.calendar:
         return ProjectCalendarView(
           projectId: widget.projectId,
         );
 
-      case 3:
+      case _ProjectTab.baselines:
         return ProjectBaselineView(
           projectId: widget.projectId,
         );
 
-      case 4:
+      case _ProjectTab.versions:
         return PlanningVersionsView(
           projectId: widget.projectId,
         );
 
-      case 5:
+      case _ProjectTab.gantt:
         return GanttView(
           projectId: widget.projectId,
         );
-
-      default:
-        return _DashboardTab(
-          insightsFuture: _insightsFuture,
-          order: _dashboardOrder,
-          visibleBlocks: _visibleDashboardBlocks,
-          viewMode: _dashboardViewMode,
-          onOrderChanged: _updateDashboardOrder,
-          onVisibilityChanged:
-              _updateDashboardVisibility,
-          onViewModeChanged:
-              _updateDashboardViewMode,
-          onResetLayout: _resetDashboardLayout,
-          onExportPdf: _exportDashboardPdf,
-          onBuildDefaultFileName:
-              _buildDashboardDefaultFileName,
-          onWarningNavigate: _navigateFromWarning,
-        );
     }
+  }
+
+  Widget _buildProjectNavigation() {
+    return FutureBuilder<ProjectAccessModel>(
+      future: _projectAccessFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState ==
+            ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return _ProjectAccessErrorState(
+            error: snapshot.error,
+            onRetry: () {
+              setState(() {
+                _loadProjectAccess();
+              });
+            },
+          );
+        }
+
+        final access = snapshot.data;
+
+        if (access == null ||
+            !access.canReadProject) {
+          return const Center(
+            child: Text(
+              'Accès au projet indisponible.',
+            ),
+          );
+        }
+
+        final availableTabs =
+            _availableTabs(access);
+
+        final selectedTab =
+            availableTabs.contains(_selectedTab)
+                ? _selectedTab
+                : _ProjectTab.dashboard;
+
+        final selectedIndex =
+            availableTabs.indexOf(selectedTab);
+
+        return Column(
+          children: [
+            NavigationBar(
+              selectedIndex: selectedIndex,
+              onDestinationSelected: (index) {
+                final destination =
+                    availableTabs[index];
+
+                setState(() {
+                  _selectedTab = destination;
+
+                  if (destination ==
+                      _ProjectTab.dashboard) {
+                    _loadProject();
+                    _loadInsights();
+                  }
+                });
+              },
+              destinations: availableTabs
+                  .map(_destinationForTab)
+                  .toList(),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: _buildSelectedTab(
+                selectedTab,
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -375,7 +543,8 @@ class _ProjectDetailScreenState
         ),
         actions: [
           IconButton(
-            tooltip: 'Exporter Microsoft Project XML',
+            tooltip:
+                'Exporter Microsoft Project XML',
             onPressed: _isExportingProjectXml
                 ? null
                 : _exportMicrosoftProjectXml,
@@ -383,7 +552,8 @@ class _ProjectDetailScreenState
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(
+                    child:
+                        CircularProgressIndicator(
                       strokeWidth: 2,
                     ),
                   )
@@ -394,7 +564,9 @@ class _ProjectDetailScreenState
           IconButton(
             tooltip: 'Rafraîchir',
             onPressed: _refreshAll,
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(
+              Icons.refresh,
+            ),
           ),
         ],
       ),
@@ -412,9 +584,11 @@ class _ProjectDetailScreenState
                 return Padding(
                   padding: const EdgeInsets.all(12),
                   child: Text(
-                    'Erreur projet : ${snapshot.error}',
-                    style:
-                        const TextStyle(color: Colors.red),
+                    'Erreur projet : '
+                    '${snapshot.error}',
+                    style: const TextStyle(
+                      color: Colors.red,
+                    ),
                   ),
                 );
               }
@@ -428,62 +602,76 @@ class _ProjectDetailScreenState
                 );
               }
 
-              return _ProjectHeader(project: project);
+              return _ProjectHeader(
+                project: project,
+              );
             },
           ),
-          NavigationBar(
-            selectedIndex: _selectedTabIndex,
-            onDestinationSelected: (index) {
-              setState(() {
-                _selectedTabIndex = index;
-
-                if (index == 0) {
-                  _loadProject();
-                  _loadInsights();
-                }
-              });
-            },
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.dashboard_outlined),
-                label: 'Dashboard',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.groups_outlined),
-                label: 'Ressources',
-              ),
-              NavigationDestination(
-                icon: Icon(
-                  Icons.calendar_month_outlined,
-                ),
-                selectedIcon:
-                    Icon(Icons.calendar_month),
-                label: 'Calendrier',
-              ),
-              NavigationDestination(
-                icon: Icon(
-                  Icons.camera_alt_outlined,
-                ),
-                selectedIcon:
-                    Icon(Icons.camera_alt),
-                label: 'Baselines',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.history_outlined),
-                selectedIcon: Icon(Icons.history),
-                label: 'Versions',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.timeline),
-                label: 'Gantt',
-              ),
-            ]
-          ),
-          const Divider(height: 1),
           Expanded(
-            child: _buildSelectedTab(),
+            child: _buildProjectNavigation(),
           ),
         ],
+      ),
+    );
+  }
+
+}
+
+class _ProjectAccessErrorState
+    extends StatelessWidget {
+  final Object? error;
+  final VoidCallback onRetry;
+
+  const _ProjectAccessErrorState({
+    required this.error,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Card(
+        margin: const EdgeInsets.all(24),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.lock_outline,
+                size: 42,
+                color: Theme.of(context)
+                    .colorScheme
+                    .error,
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Impossible de déterminer '
+                'vos droits sur ce projet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                error?.toString() ??
+                    'Erreur inconnue',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(
+                  Icons.refresh,
+                ),
+                label: const Text(
+                  'Réessayer',
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
