@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlannerAPI.DTOs.PlanningVersions;
@@ -5,16 +6,20 @@ using PlannerAPI.Services.Interfaces;
 
 namespace PlannerAPI.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class PlanningVersionsController : ControllerBase
     {
         private readonly IPlanningVersionService _planningVersionService;
+        private readonly IProjectAuthorizationService _authorizationService;
 
         public PlanningVersionsController(
-            IPlanningVersionService planningVersionService)
+            IPlanningVersionService planningVersionService,
+            IProjectAuthorizationService authorizationService)
         {
             _planningVersionService = planningVersionService;
+            _authorizationService = authorizationService;
         }
 
         /// <summary>
@@ -27,6 +32,8 @@ namespace PlannerAPI.Controllers
         [ProducesResponseType(
             StatusCodes.Status400BadRequest)]
         [ProducesResponseType(
+            StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(
             StatusCodes.Status404NotFound)]
         [ProducesResponseType(
             StatusCodes.Status409Conflict)]
@@ -35,6 +42,12 @@ namespace PlannerAPI.Controllers
                 int projectId,
                 [FromBody] CreatePlanningVersionRequest request)
         {
+            if (!await _authorizationService
+                    .CanEditPlanningAsync(projectId))
+            {
+                return Forbid();
+            }
+
             try
             {
                 var version =
@@ -81,10 +94,22 @@ namespace PlannerAPI.Controllers
         [ProducesResponseType(
             typeof(List<PlanningVersionSummaryResponse>),
             StatusCodes.Status200OK)]
+        [ProducesResponseType(
+            StatusCodes.Status404NotFound)]
         public async Task<
             ActionResult<List<PlanningVersionSummaryResponse>>>
             GetByProject(int projectId)
         {
+            if (!await _authorizationService
+                    .CanReadProjectAsync(projectId))
+            {
+                return NotFound(new
+                {
+                    message =
+                        $"Le projet {projectId} est introuvable."
+                });
+            }
+
             var versions =
                 await _planningVersionService.GetByProjectAsync(
                     projectId);
@@ -105,6 +130,16 @@ namespace PlannerAPI.Controllers
             ActionResult<PlanningVersionComparisonResponse>>
             CompareWithCurrent(int versionId)
         {
+            if (!await _authorizationService
+                    .CanReadPlanningVersionAsync(versionId))
+            {
+                return NotFound(new
+                {
+                    message =
+                        $"La version {versionId} est introuvable."
+                });
+            }
+
             var comparison =
                 await _planningVersionService
                     .CompareWithCurrentAsync(versionId);
@@ -141,6 +176,17 @@ namespace PlannerAPI.Controllers
                 int versionId,
                 [FromBody] RestorePlanningVersionRequest request)
         {
+            if (!await _authorizationService
+                    .CanEditPlanningVersionAsync(versionId))
+            {
+                return NotFound(new
+                {
+                    message =
+                        $"La version {versionId} est introuvable " +
+                        "ou l'accès est insuffisant."
+                });
+            }
+
             try
             {
                 var result =
@@ -197,6 +243,16 @@ namespace PlannerAPI.Controllers
         public async Task<ActionResult<PlanningVersionDetailResponse>>
             GetById(int versionId)
         {
+            if (!await _authorizationService
+                    .CanReadPlanningVersionAsync(versionId))
+            {
+                return NotFound(new
+                {
+                    message =
+                        $"La version {versionId} est introuvable."
+                });
+            }
+
             var version =
                 await _planningVersionService.GetByIdAsync(
                     versionId);
@@ -223,6 +279,17 @@ namespace PlannerAPI.Controllers
             StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(int versionId)
         {
+            if (!await _authorizationService
+                    .CanEditPlanningVersionAsync(versionId))
+            {
+                return NotFound(new
+                {
+                    message =
+                        $"La version {versionId} est introuvable " +
+                        "ou l'accès est insuffisant."
+                });
+            }
+
             var deleted =
                 await _planningVersionService.DeleteAsync(
                     versionId);

@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using PlannerAPI.Models;
 
 namespace PlannerAPI.Data
 {
-    public class AppDbContext : DbContext
+    public class AppDbContext : IdentityDbContext<AppUser, IdentityRole, string>
     {
         public AppDbContext(
             DbContextOptions<AppDbContext> options)
@@ -12,6 +14,7 @@ namespace PlannerAPI.Data
         }
 
         public DbSet<Project> Projects => Set<Project>();
+        public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
         public DbSet<PlannerTask> Tasks => Set<PlannerTask>();
         public DbSet<TaskDependency> TaskDependencies =>
             Set<TaskDependency>();
@@ -69,6 +72,50 @@ namespace PlannerAPI.Data
             modelBuilder.Entity<PlannerTask>()
                 .Property(t => t.WorkloadHours)
                 .HasPrecision(18, 2);
+
+            // =========================================================
+            // Project ownership / members
+            // =========================================================
+
+            // Project -> Owner (Identity user)
+            modelBuilder.Entity<Project>()
+                .HasOne(p => p.Owner)
+                .WithMany()
+                .HasForeignKey(p => p.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Project>()
+                .HasIndex(p => p.OwnerUserId);
+
+            // ProjectMember -> Project
+            modelBuilder.Entity<ProjectMember>()
+                .HasOne(pm => pm.Project)
+                .WithMany(p => p.Members)
+                .HasForeignKey(pm => pm.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // ProjectMember -> Identity user
+            modelBuilder.Entity<ProjectMember>()
+                .HasOne(pm => pm.User)
+                .WithMany()
+                .HasForeignKey(pm => pm.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Un utilisateur ne peut avoir qu'un seul rôle par projet.
+            modelBuilder.Entity<ProjectMember>()
+                .HasIndex(pm => new
+                {
+                    pm.ProjectId,
+                    pm.UserId
+                })
+                .IsUnique();
+
+            // Stocker les rôles en texte évite qu'un changement d'ordre
+            // dans l'enum modifie silencieusement leur signification.
+            modelBuilder.Entity<ProjectMember>()
+                .Property(pm => pm.Role)
+                .HasConversion<string>()
+                .HasMaxLength(20);
 
             // Project -> PlannerTasks
             modelBuilder.Entity<PlannerTask>()

@@ -1,30 +1,38 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlannerAPI.Data;
 using PlannerAPI.DTOs.Gantt;
 using PlannerAPI.Models;
+using PlannerAPI.Services.Interfaces;
 
 namespace PlannerAPI.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class GanttController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IProjectAuthorizationService _authorizationService;
 
-        public GanttController(AppDbContext context)
+        public GanttController(
+            AppDbContext context,
+            IProjectAuthorizationService authorizationService)
         {
             _context = context;
+            _authorizationService = authorizationService;
         }
 
         [HttpGet("project/{projectId}")]
-        public async Task<ActionResult<IEnumerable<GanttTaskDto>>> GetProjectGantt(int projectId)
+        public async Task<ActionResult<IEnumerable<GanttTaskDto>>>
+            GetProjectGantt(int projectId)
         {
-            var projectExists = await _context.Projects
-                .AnyAsync(p => p.Id == projectId);
-
-            if (!projectExists)
-                return NotFound($"Projet avec l'id {projectId} introuvable.");
+            if (!await _authorizationService.CanReadProjectAsync(projectId))
+            {
+                return NotFound(
+                    $"Projet avec l'id {projectId} introuvable.");
+            }
 
             var tasks = await _context.Tasks
                 .AsNoTracking()
@@ -65,7 +73,11 @@ namespace PlannerAPI.Controllers
                 IsLate = t.IsLate,
 
                 ResourceAssignments = t.ResourceAssignments
-                    .OrderBy(ra => ra.Resource?.Name ?? ra.ResourceGroup?.Name ?? string.Empty)
+                    .OrderBy(
+                        ra =>
+                            ra.Resource?.Name
+                            ?? ra.ResourceGroup?.Name
+                            ?? string.Empty)
                     .Select(MapResourceAssignment)
                     .ToList(),
 
@@ -79,14 +91,24 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpGet("project/{projectId}/structured")]
-        public async Task<ActionResult<GanttStructuredProjectDto>> GetStructuredProjectGantt(int projectId)
+        public async Task<ActionResult<GanttStructuredProjectDto>>
+            GetStructuredProjectGantt(int projectId)
         {
+            if (!await _authorizationService.CanReadProjectAsync(projectId))
+            {
+                return NotFound(
+                    $"Projet avec l'id {projectId} introuvable.");
+            }
+
             var project = await _context.Projects
                 .AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == projectId);
 
             if (project == null)
-                return NotFound($"Projet avec l'id {projectId} introuvable.");
+            {
+                return NotFound(
+                    $"Projet avec l'id {projectId} introuvable.");
+            }
 
             var items = await _context.PlanningItems
                 .AsNoTracking()
@@ -112,7 +134,9 @@ namespace PlannerAPI.Controllers
                 ProjectCode = project.ProjectCode,
                 ProjectStartDate = project.StartDate,
                 ProjectEndDate = project.EndDate,
-                Items = items.Select(item => MapPlanningItem(item, items)).ToList()
+                Items = items
+                    .Select(item => MapPlanningItem(item, items))
+                    .ToList()
             };
 
             return Ok(result);
@@ -139,7 +163,8 @@ namespace PlannerAPI.Controllers
             };
         }
 
-        private static GanttTaskDetailsDto MapTaskDetails(PlannerTask task)
+        private static GanttTaskDetailsDto MapTaskDetails(
+            PlannerTask task)
         {
             return new GanttTaskDetailsDto
             {
@@ -155,7 +180,8 @@ namespace PlannerAPI.Controllers
                 ProgressPercent = task.ProgressPercent,
 
                 ActualDuration = task.ActualDuration,
-                AssignedResourcesCount = task.AssignedResourcesCount,
+                AssignedResourcesCount =
+                    task.AssignedResourcesCount,
                 WorkloadHours = task.WorkloadHours,
 
                 EarlyStart = task.EarlyStart,
@@ -168,7 +194,11 @@ namespace PlannerAPI.Controllers
                 IsLate = task.IsLate,
 
                 ResourceAssignments = task.ResourceAssignments
-                    .OrderBy(ra => ra.Resource?.Name ?? ra.ResourceGroup?.Name ?? string.Empty)
+                    .OrderBy(
+                        ra =>
+                            ra.Resource?.Name
+                            ?? ra.ResourceGroup?.Name
+                            ?? string.Empty)
                     .Select(MapResourceAssignment)
                     .ToList(),
 
@@ -179,7 +209,8 @@ namespace PlannerAPI.Controllers
             };
         }
 
-        private static GanttDependencyDto MapDependency(TaskDependency dependency)
+        private static GanttDependencyDto MapDependency(
+            TaskDependency dependency)
         {
             return new GanttDependencyDto
             {
@@ -191,7 +222,8 @@ namespace PlannerAPI.Controllers
             };
         }
 
-        private static GanttResourceAssignmentDto MapResourceAssignment(ResourceAssignment assignment)
+        private static GanttResourceAssignmentDto
+            MapResourceAssignment(ResourceAssignment assignment)
         {
             return new GanttResourceAssignmentDto
             {
@@ -202,10 +234,12 @@ namespace PlannerAPI.Controllers
                 ResourceType = assignment.Resource?.Type,
 
                 ResourceGroupId = assignment.ResourceGroupId,
-                ResourceGroupName = assignment.ResourceGroup?.Name,
+                ResourceGroupName =
+                    assignment.ResourceGroup?.Name,
 
                 WorkloadHours = assignment.WorkloadHours,
-                AllocationPercent = assignment.AllocationPercent
+                AllocationPercent =
+                    assignment.AllocationPercent
             };
         }
 
@@ -223,7 +257,8 @@ namespace PlannerAPI.Controllers
                     break;
 
                 var parent = projectItems
-                    .FirstOrDefault(i => i.Id == currentParentId.Value);
+                    .FirstOrDefault(
+                        i => i.Id == currentParentId.Value);
 
                 if (parent == null)
                     break;

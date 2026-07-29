@@ -11,16 +11,34 @@ namespace PlannerAPI.Services.Implementations
     {
         private readonly AppDbContext _context;
         private readonly ITaskService _taskService;
+        private readonly ICurrentUserService _currentUser;
 
-        public ProjectService(AppDbContext context, ITaskService taskService)
+        public ProjectService(
+            AppDbContext context,
+            ITaskService taskService,
+            ICurrentUserService currentUser)
         {
             _context = context;
             _taskService = taskService;
+            _currentUser = currentUser;
         }
 
         public async Task<IEnumerable<ProjectReadDto>> GetAllAsync()
         {
-            var projects = await _context.Projects
+            var query = _context.Projects
+                .AsNoTracking()
+                .AsQueryable();
+
+            if (!_currentUser.IsGlobalAdmin)
+            {
+                var userId = _currentUser.UserId;
+
+                query = query.Where(p =>
+                    p.OwnerUserId == userId ||
+                    p.Members.Any(m => m.UserId == userId));
+            }
+
+            var projects = await query
                 .OrderBy(p => p.Name)
                 .ToListAsync();
 
@@ -29,7 +47,9 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task<ProjectReadDto?> GetByIdAsync(int id)
         {
-            var project = await _context.Projects.FindAsync(id);
+            var project = await GetAccessibleProjectQuery()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == id);
 
             if (project == null)
                 return null;
@@ -37,9 +57,10 @@ namespace PlannerAPI.Services.Implementations
             return MapToReadDto(project);
         }
 
-        public async Task<IEnumerable<TaskReadDto>?> GetTasksByProjectIdAsync(int projectId)
+        public async Task<IEnumerable<TaskReadDto>?> GetTasksByProjectIdAsync(
+            int projectId)
         {
-            var projectExists = await _context.Projects
+            var projectExists = await GetAccessibleProjectQuery()
                 .AnyAsync(p => p.Id == projectId);
 
             if (!projectExists)
@@ -50,6 +71,8 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task<ProjectReadDto> CreateAsync(ProjectCreateDto dto)
         {
+            var userId = _currentUser.UserId;
+
             var project = new Project
             {
                 Name = dto.Name,
@@ -57,10 +80,20 @@ namespace PlannerAPI.Services.Implementations
                 ClientName = dto.ClientName,
                 ProjectCode = dto.ProjectCode,
                 StartDate = dto.StartDate,
-                EndDate = dto.EndDate
+                EndDate = dto.EndDate,
+                OwnerUserId = userId
             };
 
-            ValidateProjectDates(project.StartDate, project.EndDate);
+            ValidateProjectDates(
+                project.StartDate,
+                project.EndDate);
+
+            project.Members.Add(
+                new ProjectMember
+                {
+                    UserId = userId,
+                    Role = ProjectRole.Manager
+                });
 
             _context.Projects.Add(project);
 
@@ -69,9 +102,12 @@ namespace PlannerAPI.Services.Implementations
             return MapToReadDto(project);
         }
 
-        public async Task<ProjectReadDto?> UpdateAsync(int id, ProjectUpdateDto dto)
+        public async Task<ProjectReadDto?> UpdateAsync(
+            int id,
+            ProjectUpdateDto dto)
         {
-            var project = await _context.Projects.FindAsync(id);
+            var project = await GetEditableProjectQuery()
+                .FirstOrDefaultAsync(p => p.Id == id);
 
             if (project == null)
                 return null;
@@ -83,7 +119,9 @@ namespace PlannerAPI.Services.Implementations
             project.StartDate = dto.StartDate;
             project.EndDate = dto.EndDate;
 
-            ValidateProjectDates(project.StartDate, project.EndDate);
+            ValidateProjectDates(
+                project.StartDate,
+                project.EndDate);
 
             await _context.SaveChangesAsync();
 
@@ -92,13 +130,14 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task<bool> DeleteAsync(int id)
         {
-            var project = await _context.Projects
+            var project = await GetDeletableProjectQuery()
                 .FirstOrDefaultAsync(p => p.Id == id);
 
             if (project == null)
                 return false;
 
-            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await using var transaction =
+                await _context.Database.BeginTransactionAsync();
 
             var taskIds = await _context.Tasks
                 .Where(t => t.ProjectId == id)
@@ -107,24 +146,28 @@ namespace PlannerAPI.Services.Implementations
 
             if (taskIds.Any())
             {
-                var resourceAssignments = await _context.ResourceAssignments
-                    .Where(a => taskIds.Contains(a.TaskId))
-                    .ToListAsync();
+                var resourceAssignments =
+                    await _context.ResourceAssignments
+                        .Where(a => taskIds.Contains(a.TaskId))
+                        .ToListAsync();
 
                 if (resourceAssignments.Any())
                 {
-                    _context.ResourceAssignments.RemoveRange(resourceAssignments);
+                    _context.ResourceAssignments.RemoveRange(
+                        resourceAssignments);
                 }
 
-                var taskDependencies = await _context.TaskDependencies
-                    .Where(d =>
-                        taskIds.Contains(d.PredecessorId) ||
-                        taskIds.Contains(d.SuccessorId))
-                    .ToListAsync();
+                var taskDependencies =
+                    await _context.TaskDependencies
+                        .Where(d =>
+                            taskIds.Contains(d.PredecessorId) ||
+                            taskIds.Contains(d.SuccessorId))
+                        .ToListAsync();
 
                 if (taskDependencies.Any())
                 {
-                    _context.TaskDependencies.RemoveRange(taskDependencies);
+                    _context.TaskDependencies.RemoveRange(
+                        taskDependencies);
                 }
             }
 
@@ -153,6 +196,58 @@ namespace PlannerAPI.Services.Implementations
             return true;
         }
 
+        private IQueryable<Project> GetAccessibleProjectQuery()
+        {
+            if (_currentUser.IsGlobalAdmin)
+            {
+                return _context.Projects;
+            }
+
+            var userId = _currentUser.UserId;
+
+            return _context.Projects
+                .Where(p =>
+                    p.OwnerUserId == userId ||
+                    p.Members.Any(m => m.UserId == userId));
+        }
+
+        private IQueryable<Project> GetEditableProjectQuery()
+        {
+            if (_currentUser.IsGlobalAdmin)
+            {
+                return _context.Projects;
+            }
+
+            var userId = _currentUser.UserId;
+
+            return _context.Projects
+                .Where(p =>
+                    p.OwnerUserId == userId ||
+                    p.Members.Any(m =>
+                        m.UserId == userId &&
+                        (
+                            m.Role == ProjectRole.Manager ||
+                            m.Role == ProjectRole.Lead
+                        )));
+        }
+
+        private IQueryable<Project> GetDeletableProjectQuery()
+        {
+            if (_currentUser.IsGlobalAdmin)
+            {
+                return _context.Projects;
+            }
+
+            var userId = _currentUser.UserId;
+
+            return _context.Projects
+                .Where(p =>
+                    p.OwnerUserId == userId ||
+                    p.Members.Any(m =>
+                        m.UserId == userId &&
+                        m.Role == ProjectRole.Manager));
+        }
+
         private async Task DeletePlanningItemsAsync(int projectId)
         {
             var planningItems = await _context.PlanningItems
@@ -165,7 +260,9 @@ namespace PlannerAPI.Services.Implementations
             while (planningItems.Any())
             {
                 var leafItems = planningItems
-                    .Where(item => !planningItems.Any(other => other.ParentId == item.Id))
+                    .Where(item =>
+                        !planningItems.Any(
+                            other => other.ParentId == item.Id))
                     .ToList();
 
                 if (!leafItems.Any())
@@ -196,13 +293,17 @@ namespace PlannerAPI.Services.Implementations
             if (!baselineIds.Any())
                 return;
 
-            var baselineTasks = await _context.ProjectBaselineTasks
-                .Where(t => baselineIds.Contains(t.ProjectBaselineId))
-                .ToListAsync();
+            var baselineTasks =
+                await _context.ProjectBaselineTasks
+                    .Where(t =>
+                        baselineIds.Contains(
+                            t.ProjectBaselineId))
+                    .ToListAsync();
 
             if (baselineTasks.Any())
             {
-                _context.ProjectBaselineTasks.RemoveRange(baselineTasks);
+                _context.ProjectBaselineTasks.RemoveRange(
+                    baselineTasks);
             }
 
             var baselines = await _context.ProjectBaselines
@@ -228,13 +329,17 @@ namespace PlannerAPI.Services.Implementations
                 .Select(c => c.Id)
                 .ToList();
 
-            var exceptions = await _context.ProjectCalendarExceptions
-                .Where(e => calendarIds.Contains(e.ProjectCalendarId))
-                .ToListAsync();
+            var exceptions =
+                await _context.ProjectCalendarExceptions
+                    .Where(e =>
+                        calendarIds.Contains(
+                            e.ProjectCalendarId))
+                    .ToListAsync();
 
             if (exceptions.Any())
             {
-                _context.ProjectCalendarExceptions.RemoveRange(exceptions);
+                _context.ProjectCalendarExceptions.RemoveRange(
+                    exceptions);
             }
 
             _context.ProjectCalendars.RemoveRange(calendars);
@@ -254,7 +359,9 @@ namespace PlannerAPI.Services.Implementations
             };
         }
 
-        private static void ValidateProjectDates(DateTime? startDate, DateTime? endDate)
+        private static void ValidateProjectDates(
+            DateTime? startDate,
+            DateTime? endDate)
         {
             if (startDate.HasValue &&
                 endDate.HasValue &&

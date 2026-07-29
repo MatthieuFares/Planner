@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PlannerAPI.Data;
 
@@ -11,9 +12,11 @@ using PlannerAPI.Data;
 namespace PlannerAPI.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260728181446_AddCanCreateProjects")]
+    partial class AddCanCreateProjects
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -164,9 +167,6 @@ namespace PlannerAPI.Migrations
                         .HasColumnType("int");
 
                     b.Property<bool>("CanCreateProjects")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("CanManageResources")
                         .HasColumnType("bit");
 
                     b.Property<string>("ConcurrencyStamp")

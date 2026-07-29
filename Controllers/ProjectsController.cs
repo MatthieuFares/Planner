@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PlannerAPI.DTOs.Projects;
 using PlannerAPI.DTOs.Tasks;
@@ -5,23 +6,26 @@ using PlannerAPI.Services.Interfaces;
 
 namespace PlannerAPI.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class ProjectsController : ControllerBase
     {
         private readonly IProjectService _projectService;
+        private readonly IProjectAuthorizationService _authorizationService;
 
-        public ProjectsController(IProjectService projectService)
+        public ProjectsController(
+            IProjectService projectService,
+            IProjectAuthorizationService authorizationService)
         {
             _projectService = projectService;
+            _authorizationService = authorizationService;
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<ProjectReadDto>>> GetProjects()
         {
-            var projects = await _projectService.GetAllAsync();
-
-            return Ok(projects);
+            return Ok(await _projectService.GetAllAsync());
         }
 
         [HttpGet("{id}")]
@@ -49,6 +53,9 @@ namespace PlannerAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<ProjectReadDto>> CreateProject(ProjectCreateDto dto)
         {
+            if (!await _authorizationService.CanCreateProjectAsync())
+                return Forbid();
+
             try
             {
                 var result = await _projectService.CreateAsync(dto);
@@ -56,8 +63,7 @@ namespace PlannerAPI.Controllers
                 return CreatedAtAction(
                     nameof(GetProjectById),
                     new { id = result.Id },
-                    result
-                );
+                    result);
             }
             catch (InvalidOperationException ex)
             {
@@ -66,14 +72,17 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<ActionResult<ProjectReadDto>> UpdateProject(int id, ProjectUpdateDto dto)
+        public async Task<ActionResult<ProjectReadDto>> UpdateProject(
+            int id,
+            ProjectUpdateDto dto)
         {
             try
             {
                 var result = await _projectService.UpdateAsync(id, dto);
 
                 if (result == null)
-                    return NotFound($"Projet avec l'id {id} introuvable.");
+                    return NotFound(
+                        $"Projet avec l'id {id} introuvable ou accès insuffisant.");
 
                 return Ok(result);
             }
@@ -91,7 +100,8 @@ namespace PlannerAPI.Controllers
                 var deleted = await _projectService.DeleteAsync(id);
 
                 if (!deleted)
-                    return NotFound($"Projet avec l'id {id} introuvable.");
+                    return NotFound(
+                        $"Projet avec l'id {id} introuvable ou accès insuffisant.");
 
                 return Ok("Projet supprimé avec succès.");
             }

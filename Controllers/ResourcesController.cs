@@ -1,31 +1,41 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PlannerAPI.DTOs.Resources;
 using PlannerAPI.Services.Interfaces;
 
 namespace PlannerAPI.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class ResourcesController : ControllerBase
     {
         private readonly IResourceService _resourceService;
+        private readonly IProjectAuthorizationService _authorizationService;
 
-        public ResourcesController(IResourceService resourceService)
+        public ResourcesController(
+            IResourceService resourceService,
+            IProjectAuthorizationService authorizationService)
         {
             _resourceService = resourceService;
+            _authorizationService = authorizationService;
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<ResourceReadDto>>> GetAll()
         {
-            var resources = await _resourceService.GetAllAsync();
+            if (!await _authorizationService.CanReadResourceCatalogAsync())
+                return Forbid();
 
-            return Ok(resources);
+            return Ok(await _resourceService.GetAllAsync());
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<ResourceReadDto>> GetById(int id)
         {
+            if (!await _authorizationService.CanReadResourceCatalogAsync())
+                return Forbid();
+
             var resource = await _resourceService.GetByIdAsync(id);
 
             if (resource == null)
@@ -37,6 +47,9 @@ namespace PlannerAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<ResourceReadDto>> Create(ResourceCreateDto dto)
         {
+            if (!await _authorizationService.CanManageResourceCatalogAsync())
+                return Forbid();
+
             try
             {
                 var result = await _resourceService.CreateAsync(dto);
@@ -54,8 +67,13 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<ActionResult<ResourceReadDto>> Update(int id, ResourceUpdateDto dto)
+        public async Task<ActionResult<ResourceReadDto>> Update(
+            int id,
+            ResourceUpdateDto dto)
         {
+            if (!await _authorizationService.CanManageResourceCatalogAsync())
+                return Forbid();
+
             try
             {
                 var result = await _resourceService.UpdateAsync(id, dto);
@@ -74,6 +92,9 @@ namespace PlannerAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
+            if (!await _authorizationService.CanManageResourceCatalogAsync())
+                return Forbid();
+
             try
             {
                 var deleted = await _resourceService.DeleteAsync(id);

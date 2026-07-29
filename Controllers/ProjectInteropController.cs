@@ -1,10 +1,13 @@
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using PlannerAPI.DTOs.ProjectInterop;
+using PlannerAPI.Services.Interfaces;
 using PlannerAPI.Services.ProjectInterop;
 
 namespace PlannerAPI.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class ProjectInteropController : ControllerBase
@@ -22,17 +25,20 @@ namespace PlannerAPI.Controllers
         private readonly MicrosoftProjectXmlWriter _xmlWriter;
         private readonly ProjectInteropImportService _importService;
         private readonly ProjectInteropExportService _exportService;
+        private readonly IProjectAuthorizationService _authorizationService;
 
         public ProjectInteropController(
             MicrosoftProjectXmlParser xmlParser,
             MicrosoftProjectXmlWriter xmlWriter,
             ProjectInteropImportService importService,
-            ProjectInteropExportService exportService)
+            ProjectInteropExportService exportService,
+            IProjectAuthorizationService authorizationService)
         {
             _xmlParser = xmlParser;
             _xmlWriter = xmlWriter;
             _importService = importService;
             _exportService = exportService;
+            _authorizationService = authorizationService;
         }
 
         [HttpPost("import/preview")]
@@ -43,12 +49,20 @@ namespace PlannerAPI.Controllers
         [ProducesResponseType(
             StatusCodes.Status400BadRequest)]
         [ProducesResponseType(
+            StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(
             StatusCodes.Status413PayloadTooLarge)]
         public async Task<ActionResult<ProjectImportPreviewDto>>
             PreviewImportAsync(
                 IFormFile file,
                 CancellationToken cancellationToken)
         {
+            if (!await _authorizationService.CanCreateProjectAsync() ||
+                !await _authorizationService.CanManageResourceCatalogAsync())
+            {
+                return Forbid();
+            }
+
             if (file == null || file.Length == 0)
             {
                 return BadRequest(new
@@ -131,12 +145,20 @@ namespace PlannerAPI.Controllers
         [ProducesResponseType(
             StatusCodes.Status400BadRequest)]
         [ProducesResponseType(
+            StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(
             StatusCodes.Status413PayloadTooLarge)]
         public async Task<ActionResult<ProjectInteropImportResult>>
             ImportAsync(
                 IFormFile file,
                 CancellationToken cancellationToken)
         {
+            if (!await _authorizationService.CanCreateProjectAsync() ||
+                !await _authorizationService.CanManageResourceCatalogAsync())
+            {
+                return Forbid();
+            }
+
             if (file == null || file.Length == 0)
             {
                 return BadRequest(new
@@ -236,6 +258,15 @@ namespace PlannerAPI.Controllers
             int projectId,
             CancellationToken cancellationToken)
         {
+            if (!await _authorizationService.CanReadProjectAsync(projectId))
+            {
+                return NotFound(new
+                {
+                    message =
+                        $"Projet avec l'id {projectId} introuvable."
+                });
+            }
+
             try
             {
                 var model =

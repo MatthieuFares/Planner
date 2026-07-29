@@ -23,8 +23,18 @@ namespace PlannerAPI.Models
 
         public DateTime? EndDate { get; set; }
 
+        // Nullable pendant la transition afin de conserver les projets
+        // existants créés avant l'ajout de l'authentification.
+        public string? OwnerUserId { get; set; }
+
+        public AppUser? Owner { get; set; }
+
+        public List<ProjectMember> Members { get; set; } = new();
+
         public List<PlannerTask> Tasks { get; set; } = new();
+
         public ProjectCalendar? Calendar { get; set; }
+
         public List<ProjectBaseline> Baselines { get; set; } = new();
     }
 }

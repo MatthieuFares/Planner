@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PlannerAPI.Data;
 
@@ -11,9 +12,11 @@ using PlannerAPI.Data;
 namespace PlannerAPI.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260728134320_AddIdentityAuth")]
+    partial class AddIdentityAuth
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -162,12 +165,6 @@ namespace PlannerAPI.Migrations
 
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("int");
-
-                    b.Property<bool>("CanCreateProjects")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("CanManageResources")
-                        .HasColumnType("bit");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
@@ -737,9 +734,6 @@ namespace PlannerAPI.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("OwnerUserId")
-                        .HasColumnType("nvarchar(450)");
-
                     b.Property<string>("ProjectCode")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -748,8 +742,6 @@ namespace PlannerAPI.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("OwnerUserId");
 
                     b.ToTable("Projects");
                 });
@@ -936,39 +928,6 @@ namespace PlannerAPI.Migrations
                     b.HasIndex("ProjectCalendarId", "StartDate", "EndDate");
 
                     b.ToTable("ProjectCalendarPeriods");
-                });
-
-            modelBuilder.Entity("PlannerAPI.Models.ProjectMember", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("ProjectId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(450)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("ProjectId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("ProjectMembers");
                 });
 
             modelBuilder.Entity("PlannerAPI.Models.Resource", b =>
@@ -1289,16 +1248,6 @@ namespace PlannerAPI.Migrations
                     b.Navigation("PlanningVersion");
                 });
 
-            modelBuilder.Entity("PlannerAPI.Models.Project", b =>
-                {
-                    b.HasOne("PlannerAPI.Models.AppUser", "Owner")
-                        .WithMany()
-                        .HasForeignKey("OwnerUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Owner");
-                });
-
             modelBuilder.Entity("PlannerAPI.Models.ProjectBaseline", b =>
                 {
                     b.HasOne("PlannerAPI.Models.Project", "Project")
@@ -1352,25 +1301,6 @@ namespace PlannerAPI.Migrations
                         .IsRequired();
 
                     b.Navigation("ProjectCalendar");
-                });
-
-            modelBuilder.Entity("PlannerAPI.Models.ProjectMember", b =>
-                {
-                    b.HasOne("PlannerAPI.Models.Project", "Project")
-                        .WithMany("Members")
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("PlannerAPI.Models.AppUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("PlannerAPI.Models.ResourceAssignment", b =>
@@ -1475,8 +1405,6 @@ namespace PlannerAPI.Migrations
                     b.Navigation("Baselines");
 
                     b.Navigation("Calendar");
-
-                    b.Navigation("Members");
 
                     b.Navigation("Tasks");
                 });

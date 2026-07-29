@@ -43,13 +43,16 @@ namespace PlannerAPI.Services.ProjectInterop
     {
         private readonly AppDbContext _context;
         private readonly ITaskSchedulingService _taskSchedulingService;
+        private readonly ICurrentUserService _currentUserService;
 
         public ProjectInteropImportService(
             AppDbContext context,
-            ITaskSchedulingService taskSchedulingService)
+            ITaskSchedulingService taskSchedulingService,
+            ICurrentUserService currentUserService)
         {
             _context = context;
             _taskSchedulingService = taskSchedulingService;
+            _currentUserService = currentUserService;
         }
 
         public async Task<ProjectInteropImportResult> ImportAsync(
@@ -57,6 +60,14 @@ namespace PlannerAPI.Services.ProjectInterop
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(model);
+
+            var currentUserId = _currentUserService.UserId;
+
+            if (string.IsNullOrWhiteSpace(currentUserId))
+            {
+                throw new InvalidOperationException(
+                    "L'utilisateur authentifié est introuvable.");
+            }
 
             var blockingErrors = model.Warnings
                 .Where(w =>
@@ -120,6 +131,7 @@ namespace PlannerAPI.Services.ProjectInterop
                     ProjectCode = TrimNullable(
                         model.Project.ProjectCode,
                         50),
+                    OwnerUserId = currentUserId,
                     StartDate =
                         model.Project.StartDate
                         ?? executableTasks
@@ -135,6 +147,17 @@ namespace PlannerAPI.Services.ProjectInterop
                 };
 
                 _context.Projects.Add(project);
+                await _context.SaveChangesAsync(cancellationToken);
+
+                _context.ProjectMembers.Add(
+                    new ProjectMember
+                    {
+                        ProjectId = project.Id,
+                        UserId = currentUserId,
+                        Role = ProjectRole.Manager,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
                 await _context.SaveChangesAsync(cancellationToken);
 
                 // =====================================================

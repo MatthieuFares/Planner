@@ -1,26 +1,35 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PlannerAPI.DTOs.ProjectCalendarPeriods;
 using PlannerAPI.Services.Interfaces;
 
 namespace PlannerAPI.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class ProjectCalendarPeriodsController : ControllerBase
     {
         private readonly IProjectCalendarPeriodService _periodService;
+        private readonly IProjectAuthorizationService _authorizationService;
 
         public ProjectCalendarPeriodsController(
-            IProjectCalendarPeriodService periodService)
+            IProjectCalendarPeriodService periodService,
+            IProjectAuthorizationService authorizationService)
         {
             _periodService = periodService;
+            _authorizationService = authorizationService;
         }
 
         [HttpGet("project/{projectId}")]
-        public async Task<ActionResult<IEnumerable<ProjectCalendarPeriodReadDto>>> GetByProjectId(
-            int projectId)
+        public async Task<ActionResult<IEnumerable<ProjectCalendarPeriodReadDto>>>
+            GetByProjectId(int projectId)
         {
-            var periods = await _periodService.GetByProjectIdAsync(projectId);
+            if (!await _authorizationService.CanReadProjectAsync(projectId))
+                return NotFound($"Projet avec l'id {projectId} introuvable.");
+
+            var periods =
+                await _periodService.GetByProjectIdAsync(projectId);
 
             if (periods == null)
                 return NotFound($"Projet avec l'id {projectId} introuvable.");
@@ -29,13 +38,18 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpPost("project/{projectId}")]
-        public async Task<ActionResult<ProjectCalendarPeriodReadDto>> Create(
-            int projectId,
-            ProjectCalendarPeriodCreateDto dto)
+        public async Task<ActionResult<ProjectCalendarPeriodReadDto>>
+            Create(
+                int projectId,
+                ProjectCalendarPeriodCreateDto dto)
         {
+            if (!await _authorizationService.CanEditPlanningAsync(projectId))
+                return Forbid();
+
             try
             {
-                var period = await _periodService.CreateAsync(projectId, dto);
+                var period =
+                    await _periodService.CreateAsync(projectId, dto);
 
                 if (period == null)
                     return NotFound($"Projet avec l'id {projectId} introuvable.");
@@ -49,13 +63,24 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpPut("{periodId}")]
-        public async Task<ActionResult<ProjectCalendarPeriodReadDto>> Update(
-            int periodId,
-            ProjectCalendarPeriodUpdateDto dto)
+        public async Task<ActionResult<ProjectCalendarPeriodReadDto>>
+            Update(
+                int periodId,
+                ProjectCalendarPeriodUpdateDto dto)
         {
+            if (!await _authorizationService
+                    .CanEditCalendarPeriodAsync(periodId))
+            {
+                return NotFound(
+                    $"Période avec l'id {periodId} introuvable ou accès insuffisant.");
+            }
+
             try
             {
-                var period = await _periodService.UpdateAsync(periodId, dto);
+                var period =
+                    await _periodService.UpdateAsync(
+                        periodId,
+                        dto);
 
                 if (period == null)
                     return NotFound($"Période avec l'id {periodId} introuvable.");
@@ -71,7 +96,15 @@ namespace PlannerAPI.Controllers
         [HttpDelete("{periodId}")]
         public async Task<IActionResult> Delete(int periodId)
         {
-            var deleted = await _periodService.DeleteAsync(periodId);
+            if (!await _authorizationService
+                    .CanEditCalendarPeriodAsync(periodId))
+            {
+                return NotFound(
+                    $"Période avec l'id {periodId} introuvable ou accès insuffisant.");
+            }
+
+            var deleted =
+                await _periodService.DeleteAsync(periodId);
 
             if (!deleted)
                 return NotFound($"Période avec l'id {periodId} introuvable.");

@@ -200,7 +200,10 @@ namespace PlannerAPI.Services.Implementations
                 .ToListAsync();
 
             if (!taskIds.Any())
+            {
+                await SynchronizeProjectDatesAsync(projectId);
                 return;
+            }
 
             var dependencies = await _context.TaskDependencies
                 .AsNoTracking()
@@ -274,6 +277,34 @@ namespace PlannerAPI.Services.Implementations
             }
 
             await CalculateCriticalPathAsync(projectId);
+            await SynchronizeProjectDatesAsync(projectId);
+        }
+
+        private async Task SynchronizeProjectDatesAsync(int projectId)
+        {
+            var project = await _context.Projects
+                .FirstOrDefaultAsync(p => p.Id == projectId);
+
+            if (project == null)
+                return;
+
+            var bounds = await _context.Tasks
+                .AsNoTracking()
+                .Where(t => t.ProjectId == projectId)
+                .GroupBy(t => t.ProjectId)
+                .Select(group => new
+                {
+                    StartDate = group.Min(t => t.StartDate),
+                    EndDate = group.Max(t => t.EndDate)
+                })
+                .FirstOrDefaultAsync();
+
+            // Les bornes du projet reflètent toujours le planning courant.
+            // S'il n'y a plus aucune tâche, elles redeviennent nulles.
+            project.StartDate = bounds?.StartDate;
+            project.EndDate = bounds?.EndDate;
+
+            await _context.SaveChangesAsync();
         }
 
         private async Task<List<int>> RecalculateSingleTaskDatesAsync(
