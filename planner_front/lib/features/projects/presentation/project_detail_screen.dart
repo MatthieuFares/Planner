@@ -13,6 +13,7 @@ import '../data/project_api.dart';
 import '../data/project_insights_api.dart';
 import '../data/project_interop_api.dart';
 import '../data/project_model.dart';
+import 'project_members_view.dart';
 import '../export/dashboard_export_controller.dart';
 import 'resource_analysis_card.dart';
 import 'summary_card.dart';
@@ -35,6 +36,7 @@ enum _ProjectTab {
   calendar,
   baselines,
   versions,
+  members,
   gantt,
 }
 
@@ -330,6 +332,8 @@ class _ProjectDetailScreenState
       _ProjectTab.baselines,
       if (access.canEditPlanning)
         _ProjectTab.versions,
+      if (access.canManageMembers)
+        _ProjectTab.members,
       _ProjectTab.gantt,
     ];
   }
@@ -381,6 +385,16 @@ class _ProjectDetailScreenState
             Icons.history,
           ),
           label: 'Versions',
+        ),
+      _ProjectTab.members =>
+        const NavigationDestination(
+          icon: Icon(
+            Icons.manage_accounts_outlined,
+          ),
+          selectedIcon: Icon(
+            Icons.manage_accounts,
+          ),
+          label: 'Membres',
         ),
       _ProjectTab.gantt =>
         const NavigationDestination(
@@ -435,6 +449,11 @@ class _ProjectDetailScreenState
 
       case _ProjectTab.versions:
         return PlanningVersionsView(
+          projectId: widget.projectId,
+        );
+
+      case _ProjectTab.members:
+        return ProjectMembersView(
           projectId: widget.projectId,
         );
 

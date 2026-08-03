@@ -13,14 +13,18 @@ class ProjectsPage extends StatefulWidget {
   const ProjectsPage({super.key});
 
   @override
-  State<ProjectsPage> createState() => _ProjectsPageState();
+  State<ProjectsPage> createState() =>
+      _ProjectsPageState();
 }
 
-class _ProjectsPageState extends State<ProjectsPage> {
+class _ProjectsPageState
+    extends State<ProjectsPage> {
   final ProjectApi _projectApi = ProjectApi();
-  final ProjectInteropApi _interopApi = ProjectInteropApi();
+  final ProjectInteropApi _interopApi =
+      ProjectInteropApi();
 
-  late Future<List<Project>> _projectsFuture;
+  late Future<ProjectListResult>
+      _projectListFuture;
 
   bool _isImporting = false;
 
@@ -31,13 +35,12 @@ class _ProjectsPageState extends State<ProjectsPage> {
   }
 
   void _loadProjects() {
-    _projectsFuture = _projectApi.getProjects();
+    _projectListFuture =
+        _projectApi.getProjectList();
   }
 
   Future<void> _refreshProjects() async {
-    setState(() {
-      _loadProjects();
-    });
+    setState(_loadProjects);
   }
 
   String _formatDate(DateTime? date) {
@@ -47,20 +50,24 @@ class _ProjectsPageState extends State<ProjectsPage> {
   }
 
   String _projectSubtitle(Project project) {
-    final client = project.clientName?.isNotEmpty == true
-        ? project.clientName!
-        : 'Client non défini';
+    final client =
+        project.clientName?.isNotEmpty == true
+            ? project.clientName!
+            : 'Client non défini';
 
-    final code = project.projectCode?.isNotEmpty == true
-        ? project.projectCode!
-        : 'Code non défini';
+    final code =
+        project.projectCode?.isNotEmpty == true
+            ? project.projectCode!
+            : 'Code non défini';
 
     final dates =
-        'Début : ${_formatDate(project.startDate)} | Fin : ${_formatDate(project.endDate)}';
+        'Début : ${_formatDate(project.startDate)} | '
+        'Fin : ${_formatDate(project.endDate)}';
 
-    final description = project.description?.isNotEmpty == true
-        ? project.description!
-        : 'Aucune description';
+    final description =
+        project.description?.isNotEmpty == true
+            ? project.description!
+            : 'Aucune description';
 
     return '$code · $client\n$dates\n$description';
   }
@@ -77,7 +84,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
     required String projectName,
   }) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder: (_) => ProjectDetailScreen(
           projectId: projectId,
           initialProjectName: projectName,
@@ -87,7 +94,8 @@ class _ProjectsPageState extends State<ProjectsPage> {
   }
 
   Future<void> _createProject() async {
-    final request = await showDialog<ProjectCreateRequest>(
+    final request =
+        await showDialog<ProjectCreateRequest>(
       context: context,
       builder: (context) {
         return const ProjectFormDialog();
@@ -103,7 +111,9 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Projet créé avec succès.'),
+          content: Text(
+            'Projet créé avec succès.',
+          ),
         ),
       );
 
@@ -113,8 +123,11 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur lors de la création : $error'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Erreur lors de la création : $error',
+          ),
+          backgroundColor:
+              Theme.of(context).colorScheme.error,
         ),
       );
     }
@@ -133,22 +146,25 @@ class _ProjectsPageState extends State<ProjectsPage> {
       withData: true,
     );
 
-    if (selection == null || selection.files.isEmpty) {
+    if (selection == null ||
+        selection.files.isEmpty) {
       return;
     }
 
-    final selectedFile = selection.files.single;
+    final selectedFile =
+        selection.files.single;
     final bytes = selectedFile.bytes;
 
     if (bytes == null || bytes.isEmpty) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        SnackBar(
+          content: const Text(
             'Impossible de lire le fichier sélectionné.',
           ),
-          backgroundColor: Colors.red,
+          backgroundColor:
+              Theme.of(context).colorScheme.error,
         ),
       );
 
@@ -166,7 +182,9 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
     try {
       final preview =
-          await _interopApi.previewImport(importFile);
+          await _interopApi.previewImport(
+        importFile,
+      );
 
       if (!mounted) return;
 
@@ -176,12 +194,12 @@ class _ProjectsPageState extends State<ProjectsPage> {
         fileName: selectedFile.name,
       );
 
-      if (confirmed != true) {
-        return;
-      }
+      if (confirmed != true) return;
 
       final result =
-          await _interopApi.importProject(importFile);
+          await _interopApi.importProject(
+        importFile,
+      );
 
       if (!mounted) return;
 
@@ -189,14 +207,17 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
       if (!mounted) return;
 
-      final warningSuffix = result.warnings.isEmpty
-          ? ''
-          : ' · ${result.warnings.length} avertissement(s)';
+      final warningSuffix =
+          result.warnings.isEmpty
+              ? ''
+              : ' · ${result.warnings.length} '
+                  'avertissement(s)';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Projet "${result.projectName}" importé avec succès'
+            'Projet "${result.projectName}" '
+            'importé avec succès'
             '$warningSuffix.',
           ),
         ),
@@ -214,7 +235,8 @@ class _ProjectsPageState extends State<ProjectsPage> {
           content: Text(
             'Erreur lors de l’import : $error',
           ),
-          backgroundColor: Colors.red,
+          backgroundColor:
+              Theme.of(context).colorScheme.error,
         ),
       );
     } finally {
@@ -234,11 +256,11 @@ class _ProjectsPageState extends State<ProjectsPage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Row(
+          title: const Row(
             children: [
-              const Icon(Icons.upload_file_outlined),
-              const SizedBox(width: 10),
-              const Expanded(
+              Icon(Icons.upload_file_outlined),
+              SizedBox(width: 10),
+              Expanded(
                 child: Text(
                   'Aperçu de l’import',
                 ),
@@ -259,7 +281,8 @@ class _ProjectsPageState extends State<ProjectsPage> {
                         .textTheme
                         .titleLarge
                         ?.copyWith(
-                          fontWeight: FontWeight.w700,
+                          fontWeight:
+                              FontWeight.w700,
                         ),
                   ),
                   const SizedBox(height: 4),
@@ -275,32 +298,42 @@ class _ProjectsPageState extends State<ProjectsPage> {
                     runSpacing: 8,
                     children: [
                       _ImportPreviewChip(
-                        icon: Icons.account_tree_outlined,
+                        icon:
+                            Icons.account_tree_outlined,
                         label:
-                            '${preview.structureItemCount} structure(s)',
+                            '${preview.structureItemCount} '
+                            'structure(s)',
                       ),
                       _ImportPreviewChip(
-                        icon: Icons.task_alt_outlined,
+                        icon:
+                            Icons.task_alt_outlined,
                         label:
-                            '${preview.taskCount} tâche(s)',
+                            '${preview.taskCount} '
+                            'tâche(s)',
                       ),
                       _ImportPreviewChip(
                         icon: Icons.link,
                         label:
-                            '${preview.dependencyCount} dépendance(s)',
+                            '${preview.dependencyCount} '
+                            'dépendance(s)',
                       ),
                       _ImportPreviewChip(
-                        icon: Icons.people_outline,
+                        icon:
+                            Icons.people_outline,
                         label:
-                            '${preview.resourceCount} ressource(s)',
+                            '${preview.resourceCount} '
+                            'ressource(s)',
                       ),
                       _ImportPreviewChip(
-                        icon: Icons.assignment_ind_outlined,
+                        icon: Icons
+                            .assignment_ind_outlined,
                         label:
-                            '${preview.assignmentCount} assignation(s)',
+                            '${preview.assignmentCount} '
+                            'assignation(s)',
                       ),
                       _ImportPreviewChip(
-                        icon: Icons.calendar_month_outlined,
+                        icon: Icons
+                            .calendar_month_outlined,
                         label: preview.hasCalendar
                             ? 'Calendrier inclus'
                             : 'Pas de calendrier',
@@ -308,25 +341,31 @@ class _ProjectsPageState extends State<ProjectsPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  _ImportPreviewDates(preview: preview),
-                  if (preview.description?.isNotEmpty ==
+                  _ImportPreviewDates(
+                    preview: preview,
+                  ),
+                  if (preview.description
+                          ?.isNotEmpty ==
                       true) ...[
                     const SizedBox(height: 12),
-                    Text(
-                      preview.description!,
-                    ),
+                    Text(preview.description!),
                   ],
-                  if (preview.warnings.isNotEmpty) ...[
+                  if (preview.warnings
+                      .isNotEmpty) ...[
                     const SizedBox(height: 18),
                     Text(
                       preview.errorCount > 0
-                          ? 'Erreurs et avertissements'
+                          ? 'Erreurs et '
+                              'avertissements'
                           : 'Avertissements',
-                      style: Theme.of(dialogContext)
+                      style: Theme.of(
+                        dialogContext,
+                      )
                           .textTheme
                           .titleSmall
                           ?.copyWith(
-                            fontWeight: FontWeight.w700,
+                            fontWeight:
+                                FontWeight.w700,
                           ),
                     ),
                     const SizedBox(height: 8),
@@ -339,14 +378,21 @@ class _ProjectsPageState extends State<ProjectsPage> {
                   ],
                   const SizedBox(height: 16),
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding:
+                        const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: preview.canImport
-                          ? Theme.of(dialogContext)
+                          ? Theme.of(
+                              dialogContext,
+                            )
                               .colorScheme
                               .primaryContainer
-                              .withValues(alpha: 0.35)
-                          : Theme.of(dialogContext)
+                              .withValues(
+                                alpha: 0.35,
+                              )
+                          : Theme.of(
+                              dialogContext,
+                            )
                               .colorScheme
                               .errorContainer,
                       borderRadius:
@@ -354,10 +400,12 @@ class _ProjectsPageState extends State<ProjectsPage> {
                     ),
                     child: Text(
                       preview.canImport
-                          ? 'Le fichier peut être importé. '
-                              'Un nouveau projet Planner sera créé.'
-                          : 'L’import est bloqué. Corrigez les erreurs '
-                              'du fichier avant de continuer.',
+                          ? 'Le fichier peut être '
+                              'importé. Un nouveau '
+                              'projet Planner sera créé.'
+                          : 'L’import est bloqué. '
+                              'Corrigez les erreurs du '
+                              'fichier avant de continuer.',
                     ),
                   ),
                 ],
@@ -366,16 +414,24 @@ class _ProjectsPageState extends State<ProjectsPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(false),
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop(false);
+              },
               child: const Text('Annuler'),
             ),
             FilledButton.icon(
               onPressed: preview.canImport
-                  ? () => Navigator.of(dialogContext)
-                      .pop(true)
+                  ? () {
+                      Navigator.of(
+                        dialogContext,
+                      ).pop(true);
+                    }
                   : null,
-              icon: const Icon(Icons.download_outlined),
+              icon: const Icon(
+                Icons.download_outlined,
+              ),
               label: const Text('Importer'),
             ),
           ],
@@ -384,24 +440,36 @@ class _ProjectsPageState extends State<ProjectsPage> {
     );
   }
 
-  Future<void> _editProject(Project project) async {
-    final request = await showDialog<ProjectUpdateRequest>(
+  Future<void> _editProject(
+    Project project,
+  ) async {
+    if (!project.canEditPlanning) return;
+
+    final request =
+        await showDialog<ProjectUpdateRequest>(
       context: context,
       builder: (context) {
-        return ProjectFormDialog(project: project);
+        return ProjectFormDialog(
+          project: project,
+        );
       },
     );
 
     if (request == null) return;
 
     try {
-      await _projectApi.updateProject(project.id, request);
+      await _projectApi.updateProject(
+        project.id,
+        request,
+      );
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Projet modifié avec succès.'),
+          content: Text(
+            'Projet modifié avec succès.',
+          ),
         ),
       );
 
@@ -411,31 +479,54 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur lors de la modification : $error'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Erreur lors de la modification : '
+            '$error',
+          ),
+          backgroundColor:
+              Theme.of(context).colorScheme.error,
         ),
       );
     }
   }
 
-  Future<void> _deleteProject(Project project) async {
+  Future<void> _deleteProject(
+    Project project,
+  ) async {
+    if (!project.canDeleteProject) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Supprimer le projet'),
+          title: const Text(
+            'Supprimer le projet',
+          ),
           content: Text(
-            'Voulez-vous vraiment supprimer "${project.name}" ?\n\n'
-            'Attention : les tâches liées peuvent aussi être supprimées.',
+            'Voulez-vous vraiment supprimer '
+            '"${project.name}" ?\n\n'
+            'Cette action supprime définitivement '
+            'le planning et ses données liées.',
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop(false);
+              },
               child: const Text('Annuler'),
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Supprimer'),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop(true);
+              },
+              icon: const Icon(
+                Icons.delete_outline,
+              ),
+              label: const Text('Supprimer'),
             ),
           ],
         );
@@ -445,13 +536,17 @@ class _ProjectsPageState extends State<ProjectsPage> {
     if (confirmed != true) return;
 
     try {
-      await _projectApi.deleteProject(project.id);
+      await _projectApi.deleteProject(
+        project.id,
+      );
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Projet supprimé avec succès.'),
+          content: Text(
+            'Projet supprimé avec succès.',
+          ),
         ),
       );
 
@@ -461,14 +556,26 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur lors de la suppression : $error'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Erreur lors de la suppression : '
+            '$error',
+          ),
+          backgroundColor:
+              Theme.of(context).colorScheme.error,
         ),
       );
     }
   }
 
   Widget _buildProjectCard(Project project) {
+    final canShowActions =
+        project.canEditPlanning ||
+            project.canDeleteProject;
+
+    final actionCount =
+        (project.canEditPlanning ? 1 : 0) +
+            (project.canDeleteProject ? 1 : 0);
+
     return Card(
       child: ListTile(
         leading: const Icon(Icons.folder_open),
@@ -484,72 +591,225 @@ class _ProjectsPageState extends State<ProjectsPage> {
               ),
             ),
             const SizedBox(width: 8),
+            if (!project.canEditPlanning)
+              const Chip(
+                avatar: Icon(
+                  Icons.visibility_outlined,
+                  size: 16,
+                ),
+                label: Text('Lecture seule'),
+                visualDensity:
+                    VisualDensity.compact,
+              ),
+            const SizedBox(width: 8),
             Chip(
-              label: Text('Projet #${project.id}'),
-              visualDensity: VisualDensity.compact,
+              label:
+                  Text('Projet #${project.id}'),
+              visualDensity:
+                  VisualDensity.compact,
             ),
           ],
         ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Text(_projectSubtitle(project)),
+          padding:
+              const EdgeInsets.only(top: 6),
+          child: Text(
+            _projectSubtitle(project),
+          ),
         ),
         isThreeLine: true,
         onTap: () => _openProject(project),
-        trailing: SizedBox(
-          width: 104,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              IconButton(
-                tooltip: 'Modifier',
-                onPressed: () => _editProject(project),
-                icon: const Icon(Icons.edit_outlined),
-              ),
-              IconButton(
-                tooltip: 'Supprimer',
-                onPressed: () => _deleteProject(project),
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ],
-          ),
-        ),
+        trailing: canShowActions
+            ? SizedBox(
+                width: actionCount * 52,
+                child: Row(
+                  mainAxisAlignment:
+                      MainAxisAlignment.end,
+                  children: [
+                    if (project
+                        .canEditPlanning)
+                      IconButton(
+                        tooltip:
+                            'Modifier le projet',
+                        onPressed: () =>
+                            _editProject(project),
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                        ),
+                      ),
+                    if (project
+                        .canDeleteProject)
+                      IconButton(
+                        tooltip:
+                            'Supprimer le projet',
+                        onPressed: () =>
+                            _deleteProject(project),
+                        icon: const Icon(
+                          Icons.delete_outline,
+                        ),
+                      ),
+                  ],
+                ),
+              )
+            : null,
       ),
     );
   }
-
 
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Se déconnecter'),
+          title: const Text(
+            'Se déconnecter',
+          ),
           content: const Text(
-            'Voulez-vous fermer votre session Planner ?',
+            'Voulez-vous fermer votre '
+            'session Planner ?',
           ),
           actions: [
             TextButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(false),
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop(false);
+              },
               child: const Text('Annuler'),
             ),
             FilledButton.icon(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(true),
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop(true);
+              },
               icon: const Icon(Icons.logout),
-              label: const Text('Se déconnecter'),
+              label: const Text(
+                'Se déconnecter',
+              ),
             ),
           ],
         );
       },
     );
 
-    if (confirmed != true) {
-      return;
-    }
+    if (confirmed != true) return;
 
     await AuthSession.instance.logout();
+  }
+
+  Widget _buildImportAction() {
+    return FutureBuilder<ProjectListResult>(
+      future: _projectListFuture,
+      builder: (context, snapshot) {
+        if (snapshot.data?.canImportProjects !=
+            true) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(
+            vertical: 8,
+          ),
+          child: OutlinedButton.icon(
+            onPressed:
+                _isImporting ? null : _importProject,
+            icon: _isImporting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child:
+                        CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(
+                    Icons.upload_file_outlined,
+                  ),
+            label: Text(
+              _isImporting
+                  ? 'Import...'
+                  : 'Importer Microsoft Project',
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget? _buildCreateProjectButton() {
+    return FutureBuilder<ProjectListResult>(
+      future: _projectListFuture,
+      builder: (context, snapshot) {
+        if (snapshot.data?.canCreateProjects !=
+            true) {
+          return const SizedBox.shrink();
+        }
+
+        return FloatingActionButton.extended(
+          onPressed: _createProject,
+          icon: const Icon(Icons.add),
+          label: const Text(
+            'Nouveau projet',
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState(
+    ProjectListResult result,
+  ) {
+    return Center(
+      child: Card(
+        margin: const EdgeInsets.all(24),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.folder_off_outlined,
+                size: 48,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                result.canCreateProjects
+                    ? 'Aucun projet créé'
+                    : 'Aucun projet attribué',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(
+                      fontWeight:
+                          FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                result.canCreateProjects
+                    ? 'Créez votre premier projet '
+                        'Planner.'
+                    : 'Un Manager doit vous ajouter '
+                        'à un projet avant qu’il '
+                        'apparaisse ici.',
+                textAlign: TextAlign.center,
+              ),
+              if (result.canCreateProjects) ...[
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: _createProject,
+                  icon: const Icon(Icons.add),
+                  label: const Text(
+                    'Créer un projet',
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -558,31 +818,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
       appBar: AppBar(
         title: const Text('Mes projets'),
         actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: 8,
-            ),
-            child: OutlinedButton.icon(
-              onPressed:
-                  _isImporting ? null : _importProject,
-              icon: _isImporting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.upload_file_outlined,
-                    ),
-              label: Text(
-                _isImporting
-                    ? 'Import...'
-                    : 'Importer Microsoft Project',
-              ),
-            ),
-          ),
+          _buildImportAction(),
           const SizedBox(width: 8),
           IconButton(
             tooltip: 'Rafraîchir',
@@ -590,22 +826,21 @@ class _ProjectsPageState extends State<ProjectsPage> {
             icon: const Icon(Icons.refresh),
           ),
           IconButton(
-            tooltip: AuthSession.instance.email == null
-                ? 'Déconnexion'
-                : 'Déconnexion (${AuthSession.instance.email})',
+            tooltip:
+                AuthSession.instance.email == null
+                    ? 'Déconnexion'
+                    : 'Déconnexion '
+                        '(${AuthSession.instance.email})',
             onPressed: _logout,
             icon: const Icon(Icons.logout),
           ),
           const SizedBox(width: 8),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _createProject,
-        icon: const Icon(Icons.add),
-        label: const Text('Nouveau projet'),
-      ),
-      body: FutureBuilder<List<Project>>(
-        future: _projectsFuture,
+      floatingActionButton:
+          _buildCreateProjectButton(),
+      body: FutureBuilder<ProjectListResult>(
+        future: _projectListFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState ==
               ConnectionState.waiting) {
@@ -616,29 +851,39 @@ class _ProjectsPageState extends State<ProjectsPage> {
             return Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Erreur lors du chargement des projets : ${snapshot.error}',
-                style:
-                    const TextStyle(color: Colors.red),
+                'Erreur lors du chargement des '
+                'projets : ${snapshot.error}',
+                style: TextStyle(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .error,
+                ),
               ),
             );
           }
 
-          final projects = snapshot.data ?? [];
+          final result = snapshot.data;
 
-          if (projects.isEmpty) {
+          if (result == null) {
             return const Center(
-              child: Text('Aucun projet trouvé.'),
+              child: Text(
+                'Aucune donnée projet reçue.',
+              ),
             );
+          }
+
+          if (result.projects.isEmpty) {
+            return _buildEmptyState(result);
           }
 
           return ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: projects.length,
+            itemCount: result.projects.length,
             separatorBuilder: (_, _) =>
                 const SizedBox(height: 8),
             itemBuilder: (context, index) {
               return _buildProjectCard(
-                projects[index],
+                result.projects[index],
               );
             },
           );
@@ -648,7 +893,8 @@ class _ProjectsPageState extends State<ProjectsPage> {
   }
 }
 
-class _ImportPreviewChip extends StatelessWidget {
+class _ImportPreviewChip
+    extends StatelessWidget {
   final IconData icon;
   final String label;
 
@@ -667,7 +913,8 @@ class _ImportPreviewChip extends StatelessWidget {
   }
 }
 
-class _ImportPreviewDates extends StatelessWidget {
+class _ImportPreviewDates
+    extends StatelessWidget {
   final ProjectImportPreview preview;
 
   const _ImportPreviewDates({
@@ -677,7 +924,8 @@ class _ImportPreviewDates extends StatelessWidget {
   String _formatDate(DateTime? value) {
     if (value == null) return '-';
 
-    return DateFormat('dd/MM/yyyy').format(value);
+    return DateFormat('dd/MM/yyyy')
+        .format(value);
   }
 
   @override
@@ -687,23 +935,28 @@ class _ImportPreviewDates extends StatelessWidget {
       runSpacing: 6,
       children: [
         Text(
-          'Début : ${_formatDate(preview.startDate)}',
+          'Début : '
+          '${_formatDate(preview.startDate)}',
         ),
         Text(
-          'Fin : ${_formatDate(preview.endDate)}',
+          'Fin : '
+          '${_formatDate(preview.endDate)}',
         ),
         Text(
-          'Exceptions : ${preview.calendarExceptionCount}',
+          'Exceptions : '
+          '${preview.calendarExceptionCount}',
         ),
         Text(
-          'Périodes : ${preview.calendarPeriodCount}',
+          'Périodes : '
+          '${preview.calendarPeriodCount}',
         ),
       ],
     );
   }
 }
 
-class _ImportWarningTile extends StatelessWidget {
+class _ImportWarningTile
+    extends StatelessWidget {
   final ProjectImportWarning warning;
 
   const _ImportWarningTile({
@@ -718,9 +971,12 @@ class _ImportWarningTile extends StatelessWidget {
         : Colors.orange.shade800;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(
+        bottom: 8,
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
           Icon(
             isError

@@ -12,7 +12,8 @@ namespace PlannerAPI.Controllers
     public class ProjectsController : ControllerBase
     {
         private readonly IProjectService _projectService;
-        private readonly IProjectAuthorizationService _authorizationService;
+        private readonly IProjectAuthorizationService
+            _authorizationService;
 
         public ProjectsController(
             IProjectService projectService,
@@ -23,42 +24,84 @@ namespace PlannerAPI.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<ProjectReadDto>>> GetProjects()
+        public async Task<ActionResult<IEnumerable<ProjectReadDto>>>
+            GetProjects()
         {
             return Ok(await _projectService.GetAllAsync());
         }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<ProjectReadDto>> GetProjectById(int id)
+        [HttpGet("list")]
+        public async Task<ActionResult<ProjectListResponseDto>>
+            GetProjectList()
         {
-            var project = await _projectService.GetByIdAsync(id);
+            var canCreateProjects =
+                await _authorizationService
+                    .CanCreateProjectAsync();
+
+            var canImportProjects =
+                canCreateProjects &&
+                await _authorizationService
+                    .CanManageResourceCatalogAsync();
+
+            var projects =
+                await _projectService.GetListItemsAsync();
+
+            return Ok(
+                new ProjectListResponseDto
+                {
+                    CanCreateProjects = canCreateProjects,
+                    CanImportProjects = canImportProjects,
+                    Projects = projects.ToList()
+                });
+        }
+
+        [HttpGet("{id:int}")]
+        public async Task<ActionResult<ProjectReadDto>>
+            GetProjectById(int id)
+        {
+            var project =
+                await _projectService.GetByIdAsync(id);
 
             if (project == null)
-                return NotFound($"Projet avec l'id {id} introuvable.");
+            {
+                return NotFound(
+                    $"Projet avec l'id {id} introuvable.");
+            }
 
             return Ok(project);
         }
 
-        [HttpGet("{id}/tasks")]
-        public async Task<ActionResult<IEnumerable<TaskReadDto>>> GetTasksByProjectId(int id)
+        [HttpGet("{id:int}/tasks")]
+        public async Task<ActionResult<IEnumerable<TaskReadDto>>>
+            GetTasksByProjectId(int id)
         {
-            var tasks = await _projectService.GetTasksByProjectIdAsync(id);
+            var tasks =
+                await _projectService
+                    .GetTasksByProjectIdAsync(id);
 
             if (tasks == null)
-                return NotFound($"Projet avec l'id {id} introuvable.");
+            {
+                return NotFound(
+                    $"Projet avec l'id {id} introuvable.");
+            }
 
             return Ok(tasks);
         }
 
         [HttpPost]
-        public async Task<ActionResult<ProjectReadDto>> CreateProject(ProjectCreateDto dto)
+        public async Task<ActionResult<ProjectReadDto>>
+            CreateProject(ProjectCreateDto dto)
         {
-            if (!await _authorizationService.CanCreateProjectAsync())
+            if (!await _authorizationService
+                    .CanCreateProjectAsync())
+            {
                 return Forbid();
+            }
 
             try
             {
-                var result = await _projectService.CreateAsync(dto);
+                var result =
+                    await _projectService.CreateAsync(dto);
 
                 return CreatedAtAction(
                     nameof(GetProjectById),
@@ -71,18 +114,24 @@ namespace PlannerAPI.Controllers
             }
         }
 
-        [HttpPut("{id}")]
-        public async Task<ActionResult<ProjectReadDto>> UpdateProject(
-            int id,
-            ProjectUpdateDto dto)
+        [HttpPut("{id:int}")]
+        public async Task<ActionResult<ProjectReadDto>>
+            UpdateProject(
+                int id,
+                ProjectUpdateDto dto)
         {
             try
             {
-                var result = await _projectService.UpdateAsync(id, dto);
+                var result =
+                    await _projectService
+                        .UpdateAsync(id, dto);
 
                 if (result == null)
+                {
                     return NotFound(
-                        $"Projet avec l'id {id} introuvable ou accès insuffisant.");
+                        $"Projet avec l'id {id} introuvable " +
+                        "ou accès insuffisant.");
+                }
 
                 return Ok(result);
             }
@@ -92,18 +141,24 @@ namespace PlannerAPI.Controllers
             }
         }
 
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteProject(int id)
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult>
+            DeleteProject(int id)
         {
             try
             {
-                var deleted = await _projectService.DeleteAsync(id);
+                var deleted =
+                    await _projectService.DeleteAsync(id);
 
                 if (!deleted)
+                {
                     return NotFound(
-                        $"Projet avec l'id {id} introuvable ou accès insuffisant.");
+                        $"Projet avec l'id {id} introuvable " +
+                        "ou accès insuffisant.");
+                }
 
-                return Ok("Projet supprimé avec succès.");
+                return Ok(
+                    "Projet supprimé avec succès.");
             }
             catch (InvalidOperationException ex)
             {

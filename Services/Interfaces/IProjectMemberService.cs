@@ -4,7 +4,8 @@ namespace PlannerAPI.Services.Interfaces
 {
     public interface IProjectMemberService
     {
-        Task<IEnumerable<ProjectMemberReadDto>> GetMembersAsync(int projectId);
+        Task<IEnumerable<ProjectMemberReadDto>> GetMembersAsync(
+            int projectId);
 
         Task<ProjectMemberReadDto> AddMemberAsync(
             int projectId,
@@ -15,6 +16,8 @@ namespace PlannerAPI.Services.Interfaces
             int memberId,
             ProjectMemberUpdateDto dto);
 
-        Task RemoveMemberAsync(int projectId, int memberId);
+        Task RemoveMemberAsync(
+            int projectId,
+            int memberId);
     }
 }

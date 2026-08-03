@@ -1,89 +1,84 @@
 import 'package:flutter/material.dart';
 
 import '../data/auth_api.dart';
-import '../data/auth_session.dart';
-import 'register_page.dart';
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+class RegisterPage extends StatefulWidget {
+  final String? initialEmail;
+
+  const RegisterPage({
+    super.key,
+    this.initialEmail,
+  });
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<RegisterPage> createState() =>
+      _RegisterPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _RegisterPageState extends State<RegisterPage> {
   final GlobalKey<FormState> _formKey =
       GlobalKey<FormState>();
 
-  final TextEditingController _emailController =
-      TextEditingController();
+  late final TextEditingController _emailController;
   final TextEditingController _passwordController =
+      TextEditingController();
+  final TextEditingController
+      _passwordConfirmationController =
       TextEditingController();
 
   final FocusNode _passwordFocusNode = FocusNode();
+  final FocusNode _confirmationFocusNode = FocusNode();
+
+  final AuthApi _authApi = AuthApi();
 
   bool _obscurePassword = true;
+  bool _obscureConfirmation = true;
   bool _isSubmitting = false;
   String? _errorMessage;
-  String? _successMessage;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _emailController = TextEditingController(
+      text: widget.initialEmail?.trim() ?? '',
+    );
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _passwordConfirmationController.dispose();
     _passwordFocusNode.dispose();
+    _confirmationFocusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _openRegistration() async {
-    if (_isSubmitting) return;
-
-    final registeredEmail =
-        await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
-        builder: (context) => RegisterPage(
-          initialEmail: _emailController.text,
-        ),
-      ),
-    );
-
-    if (!mounted || registeredEmail == null) return;
-
-    _emailController.text = registeredEmail;
-    _passwordController.clear();
-
-    setState(() {
-      _errorMessage = null;
-      _successMessage =
-          'Compte créé. Vous pouvez maintenant vous connecter.';
-    });
-
-    _passwordFocusNode.requestFocus();
-  }
-
   Future<void> _submit() async {
-    if (_isSubmitting) {
-      return;
-    }
+    if (_isSubmitting) return;
 
     final isValid =
         _formKey.currentState?.validate() ?? false;
 
-    if (!isValid) {
-      return;
-    }
+    if (!isValid) return;
 
     setState(() {
       _isSubmitting = true;
       _errorMessage = null;
-      _successMessage = null;
     });
 
     try {
-      await AuthSession.instance.login(
-        email: _emailController.text,
+      final email = _emailController.text.trim();
+
+      await _authApi.register(
+        email: email,
         password: _passwordController.text,
       );
+
+      if (!mounted) return;
+
+      Navigator.of(context).pop(email);
     } on AuthException catch (error) {
       if (!mounted) return;
 
@@ -95,7 +90,7 @@ class _LoginPageState extends State<LoginPage> {
 
       setState(() {
         _errorMessage =
-            'La connexion a échoué. Réessayez.';
+            'L’inscription a échoué. Réessayez.';
       });
     } finally {
       if (mounted) {
@@ -106,19 +101,70 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  String? _validateEmail(String? value) {
+    final email = value?.trim() ?? '';
+
+    if (email.isEmpty) {
+      return 'Saisissez votre adresse e-mail.';
+    }
+
+    final emailPattern = RegExp(
+      r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+    );
+
+    if (!emailPattern.hasMatch(email)) {
+      return 'L’adresse e-mail est invalide.';
+    }
+
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    final password = value ?? '';
+
+    if (password.isEmpty) {
+      return 'Saisissez un mot de passe.';
+    }
+
+    if (password.length < 10) {
+      return 'Utilisez au moins 10 caractères.';
+    }
+
+    if (!RegExp(r'[A-Z]').hasMatch(password)) {
+      return 'Ajoutez au moins une majuscule.';
+    }
+
+    if (!RegExp(r'[a-z]').hasMatch(password)) {
+      return 'Ajoutez au moins une minuscule.';
+    }
+
+    if (!RegExp(r'[0-9]').hasMatch(password)) {
+      return 'Ajoutez au moins un chiffre.';
+    }
+
+    if (!RegExp(r'[^A-Za-z0-9]').hasMatch(password)) {
+      return 'Ajoutez au moins un caractère spécial.';
+    }
+
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme =
         Theme.of(context).colorScheme;
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Créer un compte'),
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints:
-                  const BoxConstraints(maxWidth: 440),
+                  const BoxConstraints(maxWidth: 480),
               child: Card(
                 elevation: 2,
                 clipBehavior: Clip.antiAlias,
@@ -144,7 +190,7 @@ class _LoginPageState extends State<LoginPage> {
                                     BorderRadius.circular(18),
                               ),
                               child: Icon(
-                                Icons.account_tree_outlined,
+                                Icons.person_add_alt_1_outlined,
                                 size: 38,
                                 color: colorScheme
                                     .onPrimaryContainer,
@@ -153,11 +199,11 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           const SizedBox(height: 20),
                           Text(
-                            'Planner',
+                            'Créer votre compte Planner',
                             textAlign: TextAlign.center,
                             style: Theme.of(context)
                                 .textTheme
-                                .headlineMedium
+                                .headlineSmall
                                 ?.copyWith(
                                   fontWeight:
                                       FontWeight.w700,
@@ -165,7 +211,8 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Connectez-vous pour accéder à vos projets.',
+                            'Le compte devra ensuite être ajouté '
+                            'à un projet par un Manager.',
                             textAlign: TextAlign.center,
                             style: Theme.of(context)
                                 .textTheme
@@ -195,20 +242,7 @@ class _LoginPageState extends State<LoginPage> {
                                   Icon(Icons.email_outlined),
                               border: OutlineInputBorder(),
                             ),
-                            validator: (value) {
-                              final email =
-                                  value?.trim() ?? '';
-
-                              if (email.isEmpty) {
-                                return 'Saisissez votre adresse e-mail.';
-                              }
-
-                              if (!email.contains('@')) {
-                                return 'L’adresse e-mail est invalide.';
-                              }
-
-                              return null;
-                            },
+                            validator: _validateEmail,
                             onFieldSubmitted: (_) {
                               _passwordFocusNode
                                   .requestFocus();
@@ -222,9 +256,9 @@ class _LoginPageState extends State<LoginPage> {
                             enabled: !_isSubmitting,
                             obscureText: _obscurePassword,
                             textInputAction:
-                                TextInputAction.done,
+                                TextInputAction.next,
                             autofillHints: const [
-                              AutofillHints.password,
+                              AutofillHints.newPassword,
                             ],
                             decoration: InputDecoration(
                               labelText: 'Mot de passe',
@@ -252,10 +286,73 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                               ),
                             ),
+                            validator: _validatePassword,
+                            onFieldSubmitted: (_) {
+                              _confirmationFocusNode
+                                  .requestFocus();
+                            },
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            '10 caractères minimum, avec '
+                            'majuscule, minuscule, chiffre et '
+                            'caractère spécial.',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller:
+                                _passwordConfirmationController,
+                            focusNode:
+                                _confirmationFocusNode,
+                            enabled: !_isSubmitting,
+                            obscureText:
+                                _obscureConfirmation,
+                            textInputAction:
+                                TextInputAction.done,
+                            autofillHints: const [
+                              AutofillHints.newPassword,
+                            ],
+                            decoration: InputDecoration(
+                              labelText:
+                                  'Confirmer le mot de passe',
+                              prefixIcon:
+                                  const Icon(
+                                Icons.lock_reset_outlined,
+                              ),
+                              border:
+                                  const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                tooltip: _obscureConfirmation
+                                    ? 'Afficher la confirmation'
+                                    : 'Masquer la confirmation',
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _obscureConfirmation =
+                                              !_obscureConfirmation;
+                                        });
+                                      },
+                                icon: Icon(
+                                  _obscureConfirmation
+                                      ? Icons.visibility_outlined
+                                      : Icons
+                                          .visibility_off_outlined,
+                                ),
+                              ),
+                            ),
                             validator: (value) {
                               if (value == null ||
                                   value.isEmpty) {
-                                return 'Saisissez votre mot de passe.';
+                                return 'Confirmez votre mot de passe.';
+                              }
+
+                              if (value !=
+                                  _passwordController.text) {
+                                return 'Les mots de passe ne correspondent pas.';
                               }
 
                               return null;
@@ -263,40 +360,6 @@ class _LoginPageState extends State<LoginPage> {
                             onFieldSubmitted: (_) =>
                                 _submit(),
                           ),
-                          if (_successMessage != null) ...[
-                            const SizedBox(height: 16),
-                            Container(
-                              padding:
-                                  const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: colorScheme
-                                    .primaryContainer,
-                                borderRadius:
-                                    BorderRadius.circular(10),
-                              ),
-                              child: Row(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Icon(
-                                    Icons.check_circle_outline,
-                                    color: colorScheme
-                                        .onPrimaryContainer,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      _successMessage!,
-                                      style: TextStyle(
-                                        color: colorScheme
-                                            .onPrimaryContainer,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
                           if (_errorMessage != null) ...[
                             const SizedBox(height: 16),
                             Container(
@@ -344,23 +407,24 @@ class _LoginPageState extends State<LoginPage> {
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : const Icon(Icons.login),
+                                : const Icon(
+                                    Icons.person_add_alt_1,
+                                  ),
                             label: Text(
                               _isSubmitting
-                                  ? 'Connexion...'
-                                  : 'Se connecter',
+                                  ? 'Création...'
+                                  : 'Créer le compte',
                             ),
                           ),
                           const SizedBox(height: 10),
-                          OutlinedButton.icon(
+                          TextButton(
                             onPressed: _isSubmitting
                                 ? null
-                                : _openRegistration,
-                            icon: const Icon(
-                              Icons.person_add_alt_1_outlined,
-                            ),
-                            label: const Text(
-                              'Créer un compte',
+                                : () {
+                                    Navigator.of(context).pop();
+                                  },
+                            child: const Text(
+                              'J’ai déjà un compte',
                             ),
                           ),
                         ],

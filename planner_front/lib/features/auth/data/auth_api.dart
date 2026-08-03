@@ -53,6 +53,27 @@ class AuthApi {
     }
   }
 
+  Future<void> register({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      await _dio.post<void>(
+        '/auth/register',
+        data: <String, dynamic>{
+          'email': email.trim(),
+          'password': password,
+        },
+      );
+    } on DioException catch (error) {
+      throw _mapDioException(
+        error,
+        invalidCredentialsMessage:
+            'L’inscription n’a pas pu être effectuée.',
+      );
+    }
+  }
+
   Future<AuthTokenResponse> refresh({
     required String refreshToken,
   }) async {
@@ -92,16 +113,22 @@ class AuthApi {
     final statusCode = error.response?.statusCode;
     final data = error.response?.data;
 
-    if (statusCode == 400 ||
-        statusCode == 401 ||
-        statusCode == 403) {
-      return AuthException(
-        _extractServerMessage(data) ??
-            invalidCredentialsMessage,
-        shouldClearSession:
-            clearSessionOnAuthorizationFailure,
-      );
-    }
+  if (statusCode == 401 || statusCode == 403) {
+    return AuthException(
+      invalidCredentialsMessage,
+      shouldClearSession:
+          clearSessionOnAuthorizationFailure,
+    );
+  }
+
+  if (statusCode == 400 || statusCode == 409) {
+    return AuthException(
+      _extractServerMessage(data) ??
+          invalidCredentialsMessage,
+      shouldClearSession:
+          clearSessionOnAuthorizationFailure,
+    );
+  }
 
     if (error.type == DioExceptionType.connectionError ||
         error.type == DioExceptionType.connectionTimeout ||
@@ -119,6 +146,10 @@ class AuthApi {
   }
 
   String? _extractServerMessage(dynamic data) {
+    if (data is String && data.trim().isNotEmpty) {
+      return data.trim();
+    }
+
     if (data is Map) {
       for (final key in const <String>[
         'message',
@@ -136,14 +167,23 @@ class AuthApi {
       final errors = data['errors'];
 
       if (errors is Map) {
-        for (final value in errors.values) {
-          if (value is List && value.isNotEmpty) {
-            return value.first.toString();
-          }
+        final messages = <String>[];
 
-          if (value is String && value.trim().isNotEmpty) {
-            return value.trim();
+        for (final value in errors.values) {
+          if (value is List) {
+            messages.addAll(
+              value
+                  .map((item) => item.toString().trim())
+                  .where((message) => message.isNotEmpty),
+            );
+          } else if (value is String &&
+              value.trim().isNotEmpty) {
+            messages.add(value.trim());
           }
+        }
+
+        if (messages.isNotEmpty) {
+          return messages.join(' ');
         }
       }
     }

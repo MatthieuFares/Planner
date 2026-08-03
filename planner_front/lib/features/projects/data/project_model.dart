@@ -7,7 +7,11 @@ class Project {
   final DateTime? startDate;
   final DateTime? endDate;
 
-  Project({
+  final bool canEditPlanning;
+  final bool canManageMembers;
+  final bool canDeleteProject;
+
+  const Project({
     required this.id,
     required this.name,
     this.description,
@@ -15,24 +19,98 @@ class Project {
     this.projectCode,
     this.startDate,
     this.endDate,
+    this.canEditPlanning = false,
+    this.canManageMembers = false,
+    this.canDeleteProject = false,
   });
 
-  factory Project.fromJson(Map<String, dynamic> json) {
+  factory Project.fromJson(
+    Map<String, dynamic> json,
+  ) {
     return Project(
-      id: json['id'],
-      name: json['name'] ??
-          json['title'] ??
-          json['projectName'] ??
+      id: _readInt(json['id']),
+      name: json['name']?.toString() ??
+          json['title']?.toString() ??
+          json['projectName']?.toString() ??
           'Projet sans nom',
-      description: json['description'],
-      clientName: json['clientName'],
-      projectCode: json['projectCode'],
-      startDate: json['startDate'] != null
-          ? DateTime.tryParse(json['startDate'])
-          : null,
-      endDate: json['endDate'] != null
-          ? DateTime.tryParse(json['endDate'])
-          : null,
+      description:
+          _readNullableString(json['description']),
+      clientName:
+          _readNullableString(json['clientName']),
+      projectCode:
+          _readNullableString(json['projectCode']),
+      startDate: _readDate(json['startDate']),
+      endDate: _readDate(json['endDate']),
+      canEditPlanning:
+          json['canEditPlanning'] == true,
+      canManageMembers:
+          json['canManageMembers'] == true,
+      canDeleteProject:
+          json['canDeleteProject'] == true,
+    );
+  }
+
+  static int _readInt(dynamic value) {
+    if (value is int) return value;
+
+    return int.tryParse(
+          value?.toString() ?? '',
+        ) ??
+        0;
+  }
+
+  static String? _readNullableString(
+    dynamic value,
+  ) {
+    final text = value?.toString().trim();
+
+    if (text == null || text.isEmpty) {
+      return null;
+    }
+
+    return text;
+  }
+
+  static DateTime? _readDate(dynamic value) {
+    if (value == null) return null;
+
+    if (value is DateTime) return value;
+
+    return DateTime.tryParse(value.toString());
+  }
+}
+
+class ProjectListResult {
+  final bool canCreateProjects;
+  final bool canImportProjects;
+  final List<Project> projects;
+
+  const ProjectListResult({
+    required this.canCreateProjects,
+    required this.canImportProjects,
+    required this.projects,
+  });
+
+  factory ProjectListResult.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    final rawProjects =
+        json['projects'] as List<dynamic>? ??
+            const <dynamic>[];
+
+    return ProjectListResult(
+      canCreateProjects:
+          json['canCreateProjects'] == true,
+      canImportProjects:
+          json['canImportProjects'] == true,
+      projects: rawProjects
+          .whereType<Map>()
+          .map(
+            (item) => Project.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
+          .toList(),
     );
   }
 }
@@ -45,7 +123,7 @@ class ProjectCreateRequest {
   final DateTime? startDate;
   final DateTime? endDate;
 
-  ProjectCreateRequest({
+  const ProjectCreateRequest({
     required this.name,
     this.description,
     this.clientName,
@@ -74,7 +152,7 @@ class ProjectUpdateRequest {
   final DateTime? startDate;
   final DateTime? endDate;
 
-  ProjectUpdateRequest({
+  const ProjectUpdateRequest({
     required this.name,
     this.description,
     this.clientName,

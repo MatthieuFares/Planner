@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using PlannerAPI.Data;
@@ -10,63 +11,114 @@ namespace PlannerAPI.Services.Implementations
     public class ProjectMemberService : IProjectMemberService
     {
         private readonly AppDbContext _context;
-        private readonly ICurrentUserService _currentUser;
+        private readonly IProjectAuthorizationService
+            _projectAuthorization;
         private readonly UserManager<AppUser> _userManager;
 
         public ProjectMemberService(
             AppDbContext context,
-            ICurrentUserService currentUser,
+            IProjectAuthorizationService projectAuthorization,
             UserManager<AppUser> userManager)
         {
             _context = context;
-            _currentUser = currentUser;
+            _projectAuthorization = projectAuthorization;
             _userManager = userManager;
         }
 
-        public async Task<IEnumerable<ProjectMemberReadDto>> GetMembersAsync(
-            int projectId)
+        public async Task<IEnumerable<ProjectMemberReadDto>>
+            GetMembersAsync(int projectId)
         {
             await EnsureCanManageMembersAsync(projectId);
 
             var project = await _context.Projects
                 .AsNoTracking()
-                .FirstOrDefaultAsync(p => p.Id == projectId);
+                .Include(project => project.Owner)
+                .FirstOrDefaultAsync(
+                    project => project.Id == projectId);
 
             if (project == null)
-                throw new KeyNotFoundException("Projet introuvable.");
+            {
+                throw new KeyNotFoundException(
+                    "Projet introuvable.");
+            }
 
             var members = await _context.ProjectMembers
                 .AsNoTracking()
-                .Where(pm => pm.ProjectId == projectId)
-                .Include(pm => pm.User)
-                .OrderBy(pm => pm.User.Email)
+                .Where(member =>
+                    member.ProjectId == projectId)
+                .Include(member => member.User)
+                .OrderBy(member => member.User.Email)
                 .ToListAsync();
 
-            return members.Select(member =>
-                MapToReadDto(member, project.OwnerUserId));
+            var result = new List<ProjectMemberReadDto>();
+
+            // Le propriétaire appartient au projet même lorsqu'aucune
+            // ligne ProjectMember n'a été créée pour lui.
+            if (!string.IsNullOrWhiteSpace(
+                    project.OwnerUserId))
+            {
+                var ownerMember = members.FirstOrDefault(
+                    member =>
+                        member.UserId ==
+                        project.OwnerUserId);
+
+                if (ownerMember != null)
+                {
+                    result.Add(
+                        MapToReadDto(
+                            ownerMember,
+                            project.OwnerUserId));
+
+                    members.Remove(ownerMember);
+                }
+                else if (project.Owner != null)
+                {
+                    result.Add(
+                        MapOwnerToReadDto(
+                            project.Id,
+                            project.Owner));
+                }
+            }
+
+            result.AddRange(
+                members.Select(
+                    member => MapToReadDto(
+                        member,
+                        project.OwnerUserId)));
+
+            return result;
         }
 
-        public async Task<ProjectMemberReadDto> AddMemberAsync(
-            int projectId,
-            ProjectMemberCreateDto dto)
+        public async Task<ProjectMemberReadDto>
+            AddMemberAsync(
+                int projectId,
+                ProjectMemberCreateDto dto)
         {
             await EnsureCanManageMembersAsync(projectId);
 
             var project = await _context.Projects
-                .FirstOrDefaultAsync(p => p.Id == projectId);
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    project => project.Id == projectId);
 
             if (project == null)
-                throw new KeyNotFoundException("Projet introuvable.");
+            {
+                throw new KeyNotFoundException(
+                    "Projet introuvable.");
+            }
 
             var role = ParseProjectRole(dto.Role);
+            var email = dto.Email.Trim();
 
-            var user = await _userManager.FindByEmailAsync(dto.Email.Trim());
+            var user = await _userManager
+                .FindByEmailAsync(email);
 
             if (user == null)
             {
                 throw new InvalidOperationException(
-                    "Aucun utilisateur Planner ne correspond à cet e-mail. " +
-                    "Le compte doit être créé avant de pouvoir être ajouté au projet.");
+                    "Aucun utilisateur Planner ne correspond " +
+                    "à cet e-mail. Le compte doit être créé " +
+                    "avant de pouvoir être ajouté au projet.");
             }
 
             if (!user.IsActive)
@@ -75,10 +127,18 @@ namespace PlannerAPI.Services.Implementations
                     "Cet utilisateur Planner est désactivé.");
             }
 
-            var alreadyMember = await _context.ProjectMembers
-                .AnyAsync(pm =>
-                    pm.ProjectId == projectId &&
-                    pm.UserId == user.Id);
+            if (user.Id == project.OwnerUserId)
+            {
+                throw new InvalidOperationException(
+                    "Le propriétaire appartient déjà au projet " +
+                    "et conserve obligatoirement le rôle Manager.");
+            }
+
+            var alreadyMember =
+                await _context.ProjectMembers.AnyAsync(
+                    member =>
+                        member.ProjectId == projectId &&
+                        member.UserId == user.Id);
 
             if (alreadyMember)
             {
@@ -99,42 +159,76 @@ namespace PlannerAPI.Services.Implementations
 
             member.User = user;
 
-            return MapToReadDto(member, project.OwnerUserId);
+            return MapToReadDto(
+                member,
+                project.OwnerUserId);
         }
 
-        public async Task<ProjectMemberReadDto> UpdateMemberAsync(
-            int projectId,
-            int memberId,
-            ProjectMemberUpdateDto dto)
+        public async Task<ProjectMemberReadDto>
+            UpdateMemberAsync(
+                int projectId,
+                int memberId,
+                ProjectMemberUpdateDto dto)
         {
             await EnsureCanManageMembersAsync(projectId);
 
+            var newRole = ParseProjectRole(dto.Role);
+
+            await using var transaction =
+                await _context.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable);
+
             var project = await _context.Projects
-                .FirstOrDefaultAsync(p => p.Id == projectId);
+                .FirstOrDefaultAsync(
+                    project => project.Id == projectId);
 
             if (project == null)
-                throw new KeyNotFoundException("Projet introuvable.");
+            {
+                throw new KeyNotFoundException(
+                    "Projet introuvable.");
+            }
 
             var member = await _context.ProjectMembers
-                .Include(pm => pm.User)
-                .FirstOrDefaultAsync(pm =>
-                    pm.Id == memberId &&
-                    pm.ProjectId == projectId);
+                .Include(projectMember =>
+                    projectMember.User)
+                .FirstOrDefaultAsync(
+                    projectMember =>
+                        projectMember.Id == memberId &&
+                        projectMember.ProjectId ==
+                        projectId);
 
             if (member == null)
-                throw new KeyNotFoundException("Membre du projet introuvable.");
+            {
+                throw new KeyNotFoundException(
+                    "Membre du projet introuvable.");
+            }
 
             if (member.UserId == project.OwnerUserId)
             {
                 throw new InvalidOperationException(
-                    "Le propriétaire du projet reste obligatoirement Manager.");
+                    "Le propriétaire du projet reste " +
+                    "obligatoirement Manager.");
             }
 
-            member.Role = ParseProjectRole(dto.Role);
+            if (member.Role == ProjectRole.Manager &&
+                newRole != ProjectRole.Manager)
+            {
+                await EnsureManagerWillRemainAsync(
+                    project,
+                    excludedMemberId: member.Id);
+            }
 
-            await _context.SaveChangesAsync();
+            if (member.Role != newRole)
+            {
+                member.Role = newRole;
+                await _context.SaveChangesAsync();
+            }
 
-            return MapToReadDto(member, project.OwnerUserId);
+            await transaction.CommitAsync();
+
+            return MapToReadDto(
+                member,
+                project.OwnerUserId);
         }
 
         public async Task RemoveMemberAsync(
@@ -143,67 +237,118 @@ namespace PlannerAPI.Services.Implementations
         {
             await EnsureCanManageMembersAsync(projectId);
 
+            await using var transaction =
+                await _context.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable);
+
             var project = await _context.Projects
-                .FirstOrDefaultAsync(p => p.Id == projectId);
+                .FirstOrDefaultAsync(
+                    project => project.Id == projectId);
 
             if (project == null)
-                throw new KeyNotFoundException("Projet introuvable.");
+            {
+                throw new KeyNotFoundException(
+                    "Projet introuvable.");
+            }
 
             var member = await _context.ProjectMembers
-                .FirstOrDefaultAsync(pm =>
-                    pm.Id == memberId &&
-                    pm.ProjectId == projectId);
+                .FirstOrDefaultAsync(
+                    projectMember =>
+                        projectMember.Id == memberId &&
+                        projectMember.ProjectId ==
+                        projectId);
 
             if (member == null)
-                throw new KeyNotFoundException("Membre du projet introuvable.");
+            {
+                throw new KeyNotFoundException(
+                    "Membre du projet introuvable.");
+            }
 
             if (member.UserId == project.OwnerUserId)
             {
                 throw new InvalidOperationException(
-                    "Le propriétaire du projet ne peut pas être retiré.");
+                    "Le propriétaire du projet ne peut pas " +
+                    "être retiré.");
+            }
+
+            if (member.Role == ProjectRole.Manager)
+            {
+                await EnsureManagerWillRemainAsync(
+                    project,
+                    excludedMemberId: member.Id);
             }
 
             _context.ProjectMembers.Remove(member);
             await _context.SaveChangesAsync();
+
+            await transaction.CommitAsync();
         }
 
-        private async Task EnsureCanManageMembersAsync(int projectId)
+        private async Task EnsureCanManageMembersAsync(
+            int projectId)
         {
             var projectExists = await _context.Projects
                 .AsNoTracking()
-                .AnyAsync(p => p.Id == projectId);
+                .AnyAsync(
+                    project => project.Id == projectId);
 
             if (!projectExists)
-                throw new KeyNotFoundException("Projet introuvable.");
+            {
+                throw new KeyNotFoundException(
+                    "Projet introuvable.");
+            }
 
-            if (_currentUser.IsGlobalAdmin)
-                return;
-
-            var userId = _currentUser.UserId;
-
-            var canManage = await _context.Projects
-                .AsNoTracking()
-                .AnyAsync(p =>
-                    p.Id == projectId &&
-                    (
-                        p.OwnerUserId == userId ||
-                        p.Members.Any(m =>
-                            m.UserId == userId &&
-                            m.Role == ProjectRole.Manager)
-                    ));
+            var canManage =
+                await _projectAuthorization
+                    .CanManageMembersAsync(projectId);
 
             if (!canManage)
             {
                 throw new UnauthorizedAccessException(
-                    "Seul un Manager du projet peut gérer ses membres.");
+                    "Seul un Manager du projet peut gérer " +
+                    "ses membres.");
             }
         }
 
-        private static ProjectRole ParseProjectRole(string role)
+        private async Task EnsureManagerWillRemainAsync(
+            Project project,
+            int excludedMemberId)
+        {
+            // Le propriétaire est toujours un Manager effectif,
+            // même s'il n'existe pas dans ProjectMembers.
+            if (!string.IsNullOrWhiteSpace(
+                    project.OwnerUserId))
+            {
+                return;
+            }
+
+            var anotherManagerExists =
+                await _context.ProjectMembers
+                    .AsNoTracking()
+                    .AnyAsync(
+                        member =>
+                            member.ProjectId ==
+                            project.Id &&
+                            member.Id !=
+                            excludedMemberId &&
+                            member.Role ==
+                            ProjectRole.Manager);
+
+            if (!anotherManagerExists)
+            {
+                throw new InvalidOperationException(
+                    "Le projet doit conserver au moins un " +
+                    "Manager. Ajoute ou promeus un autre " +
+                    "Manager avant cette opération.");
+            }
+        }
+
+        private static ProjectRole ParseProjectRole(
+            string role)
         {
             if (!Enum.TryParse<ProjectRole>(
                     role?.Trim(),
-                    true,
+                    ignoreCase: true,
                     out var parsedRole) ||
                 !Enum.IsDefined(parsedRole))
             {
@@ -215,19 +360,46 @@ namespace PlannerAPI.Services.Implementations
             return parsedRole;
         }
 
+        private static ProjectMemberReadDto
+            MapOwnerToReadDto(
+                int projectId,
+                AppUser owner)
+        {
+            return new ProjectMemberReadDto
+            {
+                // 0 signifie que le propriétaire n'est pas
+                // matérialisé par une ligne ProjectMember.
+                Id = 0,
+                ProjectId = projectId,
+                UserId = owner.Id,
+                Email = owner.Email ?? string.Empty,
+                DisplayName = owner.DisplayName,
+                Role = ProjectRole.Manager.ToString(),
+                IsOwner = true,
+                CreatedAt = owner.CreatedAt
+            };
+        }
+
         private static ProjectMemberReadDto MapToReadDto(
             ProjectMember member,
             string? ownerUserId)
         {
+            var isOwner =
+                member.UserId == ownerUserId;
+
             return new ProjectMemberReadDto
             {
                 Id = member.Id,
                 ProjectId = member.ProjectId,
                 UserId = member.UserId,
-                Email = member.User.Email ?? string.Empty,
-                DisplayName = member.User.DisplayName,
-                Role = member.Role.ToString(),
-                IsOwner = member.UserId == ownerUserId,
+                Email = member.User.Email ??
+                    string.Empty,
+                DisplayName =
+                    member.User.DisplayName,
+                Role = isOwner
+                    ? ProjectRole.Manager.ToString()
+                    : member.Role.ToString(),
+                IsOwner = isOwner,
                 CreatedAt = member.CreatedAt
             };
         }

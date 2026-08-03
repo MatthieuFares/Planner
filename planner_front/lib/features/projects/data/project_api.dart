@@ -2,39 +2,96 @@ import '../../../core/api/api_client.dart';
 import 'project_model.dart';
 
 class ProjectApi {
-  Future<List<Project>> getProjects() async {
-    final response = await ApiClient.dio.get('/Projects');
+  Future<ProjectListResult> getProjectList() async {
+    final response =
+        await ApiClient.dio.get<Map<String, dynamic>>(
+      '/Projects/list',
+    );
 
-    final List<dynamic> data = response.data;
+    final data = response.data;
+
+    if (data == null) {
+      throw StateError(
+        'Le serveur n’a retourné aucune liste de projets.',
+      );
+    }
+
+    return ProjectListResult.fromJson(data);
+  }
+
+  Future<List<Project>> getProjects() async {
+    final response =
+        await ApiClient.dio.get<List<dynamic>>(
+      '/Projects',
+    );
+
+    final data =
+        response.data ?? const <dynamic>[];
 
     return data
-        .map((json) => Project.fromJson(json as Map<String, dynamic>))
+        .whereType<Map>()
+        .map(
+          (json) => Project.fromJson(
+            Map<String, dynamic>.from(json),
+          ),
+        )
         .toList();
   }
 
-  Future<Project> getProjectById(int projectId) async {
-    final response = await ApiClient.dio.get('/Projects/$projectId');
+  Future<Project> getProjectById(
+    int projectId,
+  ) async {
+    final response =
+        await ApiClient.dio.get<Map<String, dynamic>>(
+      '/Projects/$projectId',
+    );
 
-    return Project.fromJson(response.data as Map<String, dynamic>);
+    final data = response.data;
+
+    if (data == null) {
+      throw StateError(
+        'Le serveur n’a retourné aucun projet.',
+      );
+    }
+
+    return Project.fromJson(data);
   }
 
-  Future<Project> createProject(ProjectCreateRequest request) async {
-    final response = await ApiClient.dio.post(
+  Future<Project> createProject(
+    ProjectCreateRequest request,
+  ) async {
+    final response =
+        await ApiClient.dio.post<Map<String, dynamic>>(
       '/Projects',
       data: request.toJson(),
     );
 
-    return Project.fromJson(response.data as Map<String, dynamic>);
+    final data = response.data;
+
+    if (data == null) {
+      throw StateError(
+        'Le serveur n’a retourné aucun projet créé.',
+      );
+    }
+
+    return Project.fromJson(data);
   }
 
-  Future<void> updateProject(int projectId, ProjectUpdateRequest request) async {
-    await ApiClient.dio.put(
+  Future<void> updateProject(
+    int projectId,
+    ProjectUpdateRequest request,
+  ) async {
+    await ApiClient.dio.put<void>(
       '/Projects/$projectId',
       data: request.toJson(),
     );
   }
 
-  Future<void> deleteProject(int projectId) async {
-    await ApiClient.dio.delete('/Projects/$projectId');
+  Future<void> deleteProject(
+    int projectId,
+  ) async {
+    await ApiClient.dio.delete<void>(
+      '/Projects/$projectId',
+    );
   }
 }
