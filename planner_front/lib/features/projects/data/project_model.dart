@@ -83,11 +83,15 @@ class Project {
 class ProjectListResult {
   final bool canCreateProjects;
   final bool canImportProjects;
+  final bool canManageAccess;
+  final bool isGlobalAdmin;
   final List<Project> projects;
 
   const ProjectListResult({
     required this.canCreateProjects,
     required this.canImportProjects,
+    required this.canManageAccess,
+    required this.isGlobalAdmin,
     required this.projects,
   });
 
@@ -103,6 +107,10 @@ class ProjectListResult {
           json['canCreateProjects'] == true,
       canImportProjects:
           json['canImportProjects'] == true,
+      canManageAccess:
+          json['canManageAccess'] == true,
+      isGlobalAdmin:
+          json['isGlobalAdmin'] == true,
       projects: rawProjects
           .whereType<Map>()
           .map(

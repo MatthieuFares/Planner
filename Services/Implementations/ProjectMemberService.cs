@@ -221,8 +221,9 @@ namespace PlannerAPI.Services.Implementations
             if (member.Role != newRole)
             {
                 member.Role = newRole;
-                await _context.SaveChangesAsync();
             }
+
+            await _context.SaveChangesAsync();
 
             await transaction.CommitAsync();
 

@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../access_management/presentation/access_management_view.dart';
 import '../../auth/data/auth_session.dart';
 import '../data/project_api.dart';
 import '../data/project_interop_api.dart';
@@ -27,6 +28,7 @@ class _ProjectsPageState
       _projectListFuture;
 
   bool _isImporting = false;
+  int _selectedRootPage = 0;
 
   @override
   void initState() {
@@ -812,83 +814,151 @@ class _ProjectsPageState
     );
   }
 
+  Widget _buildProjectsBody(
+    AsyncSnapshot<ProjectListResult> snapshot,
+  ) {
+    if (snapshot.connectionState ==
+        ConnectionState.waiting) {
+      return const LinearProgressIndicator();
+    }
+
+    if (snapshot.hasError) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          'Erreur lors du chargement des '
+          'projets : ${snapshot.error}',
+          style: TextStyle(
+            color:
+                Theme.of(context).colorScheme.error,
+          ),
+        ),
+      );
+    }
+
+    final result = snapshot.data;
+
+    if (result == null) {
+      return const Center(
+        child: Text(
+          'Aucune donnée projet reçue.',
+        ),
+      );
+    }
+
+    if (result.projects.isEmpty) {
+      return _buildEmptyState(result);
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: result.projects.length,
+      separatorBuilder: (_, _) =>
+          const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        return _buildProjectCard(
+          result.projects[index],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mes projets'),
-        actions: [
-          _buildImportAction(),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Rafraîchir',
-            onPressed: _refreshProjects,
-            icon: const Icon(Icons.refresh),
-          ),
-          IconButton(
-            tooltip:
-                AuthSession.instance.email == null
-                    ? 'Déconnexion'
-                    : 'Déconnexion '
-                        '(${AuthSession.instance.email})',
-            onPressed: _logout,
-            icon: const Icon(Icons.logout),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      floatingActionButton:
-          _buildCreateProjectButton(),
-      body: FutureBuilder<ProjectListResult>(
-        future: _projectListFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState ==
-              ConnectionState.waiting) {
-            return const LinearProgressIndicator();
-          }
+    return FutureBuilder<ProjectListResult>(
+      future: _projectListFuture,
+      builder: (context, snapshot) {
+        final result = snapshot.data;
+        final canManageAccess =
+            result?.canManageAccess == true;
+        final selectedRootPage =
+            canManageAccess
+                ? _selectedRootPage
+                : 0;
 
-          if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'Erreur lors du chargement des '
-                'projets : ${snapshot.error}',
-                style: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .error,
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              selectedRootPage == 0
+                  ? 'Mes projets'
+                  : 'Équipe et accès',
+            ),
+            actions: [
+              if (selectedRootPage == 0) ...[
+                _buildImportAction(),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Rafraîchir',
+                  onPressed: _refreshProjects,
+                  icon: const Icon(Icons.refresh),
                 ),
+              ],
+              IconButton(
+                tooltip:
+                    AuthSession.instance.email == null
+                        ? 'Déconnexion'
+                        : 'Déconnexion '
+                            '(${AuthSession.instance.email})',
+                onPressed: _logout,
+                icon: const Icon(Icons.logout),
               ),
-            );
-          }
-
-          final result = snapshot.data;
-
-          if (result == null) {
-            return const Center(
-              child: Text(
-                'Aucune donnée projet reçue.',
+              const SizedBox(width: 8),
+            ],
+          ),
+          floatingActionButton:
+              selectedRootPage == 0
+                  ? _buildCreateProjectButton()
+                  : null,
+          body: Column(
+            children: [
+              if (canManageAccess)
+                NavigationBar(
+                  height: 68,
+                  selectedIndex:
+                      selectedRootPage,
+                  onDestinationSelected: (index) {
+                    setState(() {
+                      _selectedRootPage = index;
+                    });
+                  },
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(
+                        Icons.folder_outlined,
+                      ),
+                      selectedIcon: Icon(
+                        Icons.folder,
+                      ),
+                      label: 'Projets',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(
+                        Icons.manage_accounts_outlined,
+                      ),
+                      selectedIcon: Icon(
+                        Icons.manage_accounts,
+                      ),
+                      label: 'Équipe et accès',
+                    ),
+                  ],
+                ),
+              if (canManageAccess)
+                const Divider(height: 1),
+              Expanded(
+                child: selectedRootPage == 0
+                    ? _buildProjectsBody(snapshot)
+                    : AccessManagementView(
+                        isGlobalAdmin:
+                            result?.isGlobalAdmin ==
+                                true,
+                        onAccessChanged:
+                            _refreshProjects,
+                      ),
               ),
-            );
-          }
-
-          if (result.projects.isEmpty) {
-            return _buildEmptyState(result);
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: result.projects.length,
-            separatorBuilder: (_, _) =>
-                const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              return _buildProjectCard(
-                result.projects[index],
-              );
-            },
-          );
-        },
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

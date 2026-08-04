@@ -25,12 +25,29 @@ namespace PlannerAPI.Services.Implementations
 
             var userId = _currentUser.UserId;
 
-            return await _context.Users
+            var user = await _context.Users
                 .AsNoTracking()
-                .AnyAsync(user =>
-                    user.Id == userId &&
-                    user.IsActive &&
-                    user.CanCreateProjects);
+                .FirstOrDefaultAsync(candidate =>
+                    candidate.Id == userId &&
+                    candidate.IsActive);
+
+            if (user == null)
+                return false;
+
+            if (user.CanCreateProjects)
+                return true;
+
+            // Le rôle Manager donne la capacité de créer/importer
+            // uniquement tant que le rôle existe. Il ne modifie pas
+            // la permission durable stockée sur AppUser.
+            return await _context.Projects
+                .AsNoTracking()
+                .AnyAsync(project =>
+                    project.OwnerUserId == userId ||
+                    project.Members.Any(member =>
+                        member.UserId == userId &&
+                        member.Role ==
+                            ProjectRole.Manager));
         }
 
         public async Task<bool> CanReadProjectAsync(int projectId)

@@ -6,6 +6,11 @@ namespace PlannerAPI.DTOs.Projects
 
         public bool CanImportProjects { get; set; }
 
-        public List<ProjectListItemDto> Projects { get; set; } = new();
+        public bool CanManageAccess { get; set; }
+
+        public bool IsGlobalAdmin { get; set; }
+
+        public List<ProjectListItemDto> Projects
+            { get; set; } = new();
     }
 }

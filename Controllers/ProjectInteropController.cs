@@ -57,8 +57,8 @@ namespace PlannerAPI.Controllers
                 IFormFile file,
                 CancellationToken cancellationToken)
         {
-            if (!await _authorizationService.CanCreateProjectAsync() ||
-                !await _authorizationService.CanManageResourceCatalogAsync())
+            if (!await _authorizationService
+                    .CanCreateProjectAsync())
             {
                 return Forbid();
             }
@@ -153,8 +153,8 @@ namespace PlannerAPI.Controllers
                 IFormFile file,
                 CancellationToken cancellationToken)
         {
-            if (!await _authorizationService.CanCreateProjectAsync() ||
-                !await _authorizationService.CanManageResourceCatalogAsync())
+            if (!await _authorizationService
+                    .CanCreateProjectAsync())
             {
                 return Forbid();
             }

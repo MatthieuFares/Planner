@@ -107,6 +107,24 @@ namespace PlannerAPI.Services.ProjectInterop
 
             try
             {
+                var currentUser = await _context.Users
+                    .FirstOrDefaultAsync(
+                        user =>
+                            user.Id == currentUserId &&
+                            user.IsActive,
+                        cancellationToken);
+
+                if (currentUser == null)
+                {
+                    throw new InvalidOperationException(
+                        "L'utilisateur authentifié est introuvable "
+                        + "ou désactivé.");
+                }
+
+                // L'importateur devient owner + Manager et conserve
+                // durablement la permission de créer/importer.
+                currentUser.CanCreateProjects = true;
+
                 var result = new ProjectInteropImportResult
                 {
                     Warnings = model.Warnings.ToList()

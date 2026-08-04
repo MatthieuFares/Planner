@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using PlannerAPI.Data;
 using PlannerAPI.DTOs.Tasks;
@@ -150,43 +151,81 @@ namespace PlannerAPI.Services.Implementations
 
         public async Task<bool> DeleteTaskAsync(int id)
         {
-            var taskItem = await _context.Tasks.FindAsync(id);
+            await using var transaction =
+                await _context.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable);
 
-            if (taskItem == null)
-                return false;
-
-            var hasDependencies = await _context.TaskDependencies
-                .AnyAsync(d => d.PredecessorId == id || d.SuccessorId == id);
-
-            if (hasDependencies)
-                throw new InvalidOperationException(
-                    "Impossible de supprimer cette tâche car elle est utilisée dans une ou plusieurs dépendances.");
-
-            var hasAssignments = await _context.ResourceAssignments
-                .AnyAsync(a => a.TaskId == id);
-
-            if (hasAssignments)
-                throw new InvalidOperationException(
-                    "Impossible de supprimer cette tâche car elle possède une ou plusieurs assignations de ressources.");
-
-            var projectId = taskItem.ProjectId;
-
-            var linkedPlanningItems = await _context.PlanningItems
-                .Where(i => i.TaskId == id)
-                .ToListAsync();
-
-            if (linkedPlanningItems.Any())
+            try
             {
-                _context.PlanningItems.RemoveRange(linkedPlanningItems);
+                var taskItem = await _context.Tasks
+                    .FirstOrDefaultAsync(task => task.Id == id);
+
+                if (taskItem == null)
+                {
+                    await transaction.RollbackAsync();
+                    return false;
+                }
+
+                var projectId = taskItem.ProjectId;
+
+                // Une suppression depuis le Gantt est une suppression
+                // métier complète : toutes les relations courantes
+                // de la tâche sont nettoyées dans la même transaction.
+                var dependencies = await _context.TaskDependencies
+                    .Where(dependency =>
+                        dependency.PredecessorId == id ||
+                        dependency.SuccessorId == id)
+                    .ToListAsync();
+
+                if (dependencies.Any())
+                {
+                    _context.TaskDependencies.RemoveRange(
+                        dependencies);
+                }
+
+                var assignments = await _context.ResourceAssignments
+                    .Where(assignment =>
+                        assignment.TaskId == id)
+                    .ToListAsync();
+
+                if (assignments.Any())
+                {
+                    _context.ResourceAssignments.RemoveRange(
+                        assignments);
+                }
+
+                var linkedPlanningItems =
+                    await _context.PlanningItems
+                        .Where(item => item.TaskId == id)
+                        .ToListAsync();
+
+                if (linkedPlanningItems.Any())
+                {
+                    _context.PlanningItems.RemoveRange(
+                        linkedPlanningItems);
+                }
+
+                _context.Tasks.Remove(taskItem);
+
+                await _context.SaveChangesAsync();
+
+                await RecalculateProjectWbsCodesAsync(
+                    projectId);
+
+                // Recalcule les dates, les successeurs restants,
+                // le chemin critique et les bornes du projet.
+                await _taskSchedulingService
+                    .RecalculateProjectAsync(projectId);
+
+                await transaction.CommitAsync();
+
+                return true;
             }
-
-            _context.Tasks.Remove(taskItem);
-
-            await _context.SaveChangesAsync();
-
-            await RecalculateProjectWbsCodesAsync(projectId);
-
-            return true;
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
 
         private async Task RecalculateProjectWbsCodesAsync(int projectId)

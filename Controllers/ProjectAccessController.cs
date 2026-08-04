@@ -70,9 +70,12 @@ namespace PlannerAPI.Controllers
                         canReadResourceCatalog,
                     CanManageResourceCatalog =
                         canManageResourceCatalog,
-                    CanImportProjects =
-                        canCreateProjects &&
-                        canManageResourceCatalog
+
+                    // Pour le MVP, tout utilisateur autorisé à créer
+                    // un projet peut également importer un projet XML.
+                    // L'import peut créer les ressources nécessaires,
+                    // sans donner le CRUD global du catalogue.
+                    CanImportProjects = canCreateProjects
                 });
         }
     }

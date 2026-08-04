@@ -174,6 +174,22 @@ namespace PlannerAPI.Services.Implementations
         {
             var userId = _currentUser.UserId;
 
+            var currentUser = await _context.Users
+                .FirstOrDefaultAsync(user =>
+                    user.Id == userId &&
+                    user.IsActive);
+
+            if (currentUser == null)
+            {
+                throw new InvalidOperationException(
+                    "L'utilisateur authentifié est introuvable "
+                    + "ou désactivé.");
+            }
+
+            // La permission est persistée indépendamment du projet.
+            // La suppression du dernier projet ne la retire donc pas.
+            currentUser.CanCreateProjects = true;
+
             var project = new Project
             {
                 Name = dto.Name,

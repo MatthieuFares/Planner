@@ -853,7 +853,9 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
           title: const Text('Supprimer la tâche'),
           content: Text(
             'Supprimer définitivement la tâche "${task.title}" ?\n\n'
-            'Cette action peut aussi impacter les dépendances et le planning.',
+            'Ses dépendances entrantes et sortantes, ses assignations '
+            'de ressources et son élément Gantt seront également supprimés.\n\n'
+            'Les baselines et versions historiques resteront intactes.',
           ),
           actions: [
             TextButton(
@@ -890,9 +892,17 @@ class _StructuredGanttViewState extends State<StructuredGanttView> {
     } catch (error) {
       if (!mounted) return;
 
+      setState(() {
+        _loadGantt();
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur suppression tâche : $error'),
+          content: Text(
+            _formatGanttOperationError(error),
+          ),
+          backgroundColor:
+              Theme.of(context).colorScheme.error,
         ),
       );
     }

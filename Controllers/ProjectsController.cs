@@ -14,13 +14,16 @@ namespace PlannerAPI.Controllers
         private readonly IProjectService _projectService;
         private readonly IProjectAuthorizationService
             _authorizationService;
+        private readonly ICurrentUserService _currentUser;
 
         public ProjectsController(
             IProjectService projectService,
-            IProjectAuthorizationService authorizationService)
+            IProjectAuthorizationService authorizationService,
+            ICurrentUserService currentUser)
         {
             _projectService = projectService;
             _authorizationService = authorizationService;
+            _currentUser = currentUser;
         }
 
         [HttpGet]
@@ -38,20 +41,30 @@ namespace PlannerAPI.Controllers
                 await _authorizationService
                     .CanCreateProjectAsync();
 
-            var canImportProjects =
-                canCreateProjects &&
-                await _authorizationService
-                    .CanManageResourceCatalogAsync();
-
             var projects =
-                await _projectService.GetListItemsAsync();
+                (await _projectService.GetListItemsAsync())
+                    .ToList();
+
+            var isGlobalAdmin =
+                _currentUser.IsGlobalAdmin;
+
+            var canManageAccess =
+                isGlobalAdmin ||
+                projects.Any(project =>
+                    project.CanManageMembers);
 
             return Ok(
                 new ProjectListResponseDto
                 {
-                    CanCreateProjects = canCreateProjects,
-                    CanImportProjects = canImportProjects,
-                    Projects = projects.ToList()
+                    CanCreateProjects =
+                        canCreateProjects,
+                    CanImportProjects =
+                        canCreateProjects,
+                    CanManageAccess =
+                        canManageAccess,
+                    IsGlobalAdmin =
+                        isGlobalAdmin,
+                    Projects = projects
                 });
         }
 

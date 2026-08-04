@@ -16,6 +16,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IProjectAuthorizationService, ProjectAuthorizationService>();
 builder.Services.AddScoped<IProjectMemberService, ProjectMemberService>();
+builder.Services.AddScoped<IAccessManagementService, AccessManagementService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<ITaskDependencyService, TaskDependencyService>();
@@ -136,6 +137,40 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
+
+// AppUser.IsActive est une permission métier personnalisée.
+// Ce middleware bloque immédiatement les appels API d'un compte
+// désactivé, y compris lorsqu'un ancien access token est encore valide.
+app.Use(async (context, next) =>
+{
+    if (context.User.Identity?.IsAuthenticated == true)
+    {
+        var userManager =
+            context.RequestServices
+                .GetRequiredService<UserManager<AppUser>>();
+
+        var user =
+            await userManager.GetUserAsync(context.User);
+
+        if (user == null || !user.IsActive)
+        {
+            context.Response.StatusCode =
+                StatusCodes.Status401Unauthorized;
+
+            await context.Response.WriteAsJsonAsync(
+                new
+                {
+                    message =
+                        "Ce compte Planner est désactivé."
+                });
+
+            return;
+        }
+    }
+
+    await next();
+});
+
 app.UseAuthorization();
 
 var authGroup = app.MapGroup("/api/auth");
