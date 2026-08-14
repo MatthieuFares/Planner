@@ -1,12 +1,12 @@
 {
-    "name": "planner_front",
-    "short_name": "planner_front",
+    "name": "Planner",
+    "short_name": "Planner",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "description": "Planification et pilotage de projets.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {
